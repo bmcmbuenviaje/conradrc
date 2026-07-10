@@ -173,6 +173,31 @@
     }
     .vp-btn:hover { opacity: 1; }
 
+    /* ---------- Drivetrain panel ---------- */
+    .slider-head { display:flex; justify-content:space-between; font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-dim); margin-bottom:6px; }
+    .slider-head b { color: var(--neon-lime); }
+    input[type=range] {
+      -webkit-appearance:none; appearance:none; width:100%; height:8px; border-radius:5px;
+      background: linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta)); outline:none; margin:2px 0 4px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance:none; width:18px; height:18px; border-radius:50%;
+      background:#04060a; border:2px solid var(--neon-cyan); box-shadow:0 0 10px var(--neon-cyan); cursor:pointer;
+    }
+    input[type=range]::-moz-range-thumb {
+      width:16px; height:16px; border-radius:50%; background:#04060a; border:2px solid var(--neon-cyan); box-shadow:0 0 10px var(--neon-cyan); cursor:pointer;
+    }
+    .seg { display:flex; gap:0; margin:6px 0 4px; border:1px solid var(--stroke); border-radius:8px; overflow:hidden; }
+    .seg button { border:none; border-radius:0; width:50%; padding:9px; font-size:11px; }
+    .seg button.on { background: linear-gradient(180deg, rgba(0,229,255,0.25), rgba(0,229,255,0.08)); color:var(--neon-cyan); }
+    .gearbox { margin-top:12px; padding-top:12px; border-top:1px dashed var(--stroke); }
+    .gearbox.hidden { display:none; }
+    .gear-display { text-align:center; font-size:34px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--neon-lime); line-height:1; }
+    .gear-display small { font-size:14px; color:var(--text-dim); }
+    .gear-btns { display:flex; gap:10px; margin-top:10px; }
+    button.rev { margin-top:12px; }
+    button.rev.on { border-color: var(--neon-amber); color: var(--neon-amber); box-shadow: 0 0 16px rgba(255,176,32,0.4); }
+
     /* Steering / throttle bars */
     .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     .bar-wrap { background: var(--bg-2); border: 1px solid var(--stroke); border-radius: 10px; padding: 12px; }
@@ -321,6 +346,29 @@
       </section>
 
       <section class="panel">
+        <h2>Drivetrain</h2>
+        <div class="slider-head"><span>Max Power</span><b id="powerVal">100%</b></div>
+        <input type="range" id="powerSlider" min="10" max="100" step="5" value="100" />
+        <div class="slider-head" style="margin-top:10px;"><span>Transmission</span></div>
+        <div class="seg" id="transSeg">
+          <button data-trans="auto" class="on">Automatic</button>
+          <button data-trans="manual">Manual</button>
+        </div>
+        <button id="btnReverse" class="rev">◄ REVERSE: OFF</button>
+
+        <div class="gearbox hidden" id="gearBox">
+          <div class="gear-display"><span id="gearVal">1</span><small> / 6</small></div>
+          <div class="gear-btns">
+            <button id="btnShiftDown">▼ Shift Down</button>
+            <button id="btnShiftUp">▲ Shift Up</button>
+          </div>
+          <p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
+            Each gear caps top speed. Bind shift up/down to controller buttons in <b>Test &amp; Map Controls</b>.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel">
         <h2>FPV Video</h2>
         <div class="kv"><span>Capture</span><b>640×480 @ 60fps</b></div>
         <button id="btnVideo">Start Frame Grabber</button>
@@ -350,6 +398,10 @@
           <div class="corner tr telem-ok" id="hudLinkBox">
             <div class="label">Link / TX Rate</div>
             <div class="val" id="hudRate">0 Hz</div>
+          </div>
+          <div class="corner tc" style="top:0;left:50%;transform:translateX(-50%);text-align:center;">
+            <div class="label">Drivetrain</div>
+            <div class="val" id="hudGear">AUTO · 100%</div>
           </div>
           <div class="corner bl">
             <div class="label">Steering</div>
@@ -482,7 +534,12 @@
           </select>
         </div>
       </div>
-      <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
+      <div class="field-row">
+        <div class="field"><label for="mapShiftUp">Shift-up button</label><select id="mapShiftUp"></select></div>
+        <div class="field"><label for="mapShiftDown">Shift-down button</label><select id="mapShiftDown"></select></div>
+        <div class="field"><label for="mapReverse">Reverse button</label><select id="mapReverse"></select></div>
+      </div>
+      <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Watch the <b>Buttons</b> row to find a button's index for shifting/reverse. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
       <div class="modal-actions">
         <button class="primary" id="ctrlSave">Save Mapping</button>
         <button id="ctrlClose">Close</button>
@@ -509,7 +566,13 @@
     { id: 'drift', name: 'DRIFT KING', sprite: '🚗', mac: 'AA:BB:CC:77:88:99', accent: '#ff2e97', stats: { spd: 88, grip: 55, acc: 82 } },
   ];
 
-  const DEFAULT_CONTROLS = { steer: 0, throttle: 1, brake: 2, deadzone: 5, rest: 'neg' };
+  const DEFAULT_CONTROLS = {
+    steer: 0, throttle: 1, brake: 2, deadzone: 5, rest: 'neg',
+    powerLimit: 100,          // % cap on top speed (10..100)
+    transmission: 'auto',     // 'auto' | 'manual'
+    btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
+  };
+  const GEAR_COUNT = 6;
 
   const LS_VEHICLES = 'rcarcade.vehicles.v1';
   const LS_CONTROLS = 'rcarcade.controls.v1';
@@ -525,7 +588,10 @@
     vehicles: [],
     controls: { ...DEFAULT_CONTROLS },
     selectedId: null,
-    lastSteer: 90, lastThrottle: 0,
+    gear: 1,                  // current manual gear (1..GEAR_COUNT)
+    reverse: false,           // reverse direction engaged
+    prevButtons: {},          // rising-edge tracking for mapped buttons
+    lastSteer: 90, lastMotor: 0,
     lastSent: '', txCount: 0, txWindowStart: performance.now(),
     encoder: new TextEncoder(),
     testerTimer: null,
@@ -587,6 +653,21 @@
     let pwm = Math.round(press * 255);
     if (pwm <= deadzone) pwm = 0;
     return pwm;
+  }
+  // Fraction of full power allowed by the current gearbox state.
+  //  - automatic: full range (1.0)
+  //  - manual:    gear/GEAR_COUNT, so gear 1 = 1/6 top speed ... gear 6 = full
+  function gearFactor() {
+    if (state.controls.transmission !== 'manual') return 1;
+    return state.gear / GEAR_COUNT;
+  }
+  // Combine base pedal PWM with the power cap + gearbox, then apply direction.
+  // Returns a SIGNED motor value in -255..255 (negative = reverse).
+  function scaleMotor(basePwm) {
+    const factor = (state.controls.powerLimit / 100) * gearFactor();
+    let mag = Math.round(basePwm * factor);
+    mag = Math.max(0, Math.min(255, mag));
+    return state.reverse ? -mag : mag;
   }
 
   /* =================================================================
@@ -926,28 +1007,91 @@
      ================================================================= */
   function controlTick() {
     const input = readGamepad();
-    let servo = 90, pwm = 0;
+    handleMappedButtons(); // shift up/down + reverse edges
+    let servo = 90, motor = 0;
     if (input) {
       servo = axisToServo(input.steerAxis);
-      pwm   = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone);
+      const base = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone);
+      motor = scaleMotor(base);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
     state.lastSteer = servo;
-    state.lastThrottle = pwm;
-    if (selected()) sendDrive(servo, pwm);
-    paintHud(servo, pwm);
+    state.lastMotor = motor;
+    if (selected()) sendDrive(servo, motor);
+    paintHud(servo, motor);
   }
 
-  function paintHud(servo, pwm) {
+  // Rising-edge detection for the gamepad buttons bound to shift/reverse.
+  function handleMappedButtons() {
+    if (state.padIndex === null) return;
+    const pad = navigator.getGamepads()[state.padIndex];
+    if (!pad) return;
+    const edge = (idx) => {
+      if (idx === null || idx === undefined || !pad.buttons[idx]) return false;
+      const pressed = pad.buttons[idx].pressed;
+      const was = state.prevButtons[idx] || false;
+      state.prevButtons[idx] = pressed;
+      return pressed && !was;
+    };
+    const c = state.controls;
+    if (edge(c.btnShiftUp))   shiftGear(+1);
+    if (edge(c.btnShiftDown)) shiftGear(-1);
+    if (edge(c.btnReverse))   toggleReverse();
+  }
+
+  function paintHud(servo, motor) {
+    const mag = Math.abs(motor);
     $('hudSteer').textContent = servo + '°';
-    $('hudThrottle').textContent = pwm;
+    $('hudThrottle').textContent = (motor < 0 ? 'R ' : '') + mag;
     $('steerVal').textContent = servo;
-    $('throttleVal').textContent = pwm;
+    $('throttleVal').textContent = (motor < 0 ? '-' : '') + mag;
     const pct = (servo / 180) * 100;
     const steerBar = $('steerBar');
     if (servo >= 90) { steerBar.style.left = '50%'; steerBar.style.width = (pct - 50) + '%'; }
     else             { steerBar.style.left = pct + '%'; steerBar.style.width = (50 - pct) + '%'; }
-    $('throttleBar').style.width = ((pwm / 255) * 100) + '%';
+    $('throttleBar').style.width = ((mag / 255) * 100) + '%';
+    // Drivetrain HUD line
+    const mode = state.controls.transmission === 'manual' ? ('GEAR ' + state.gear + '/' + GEAR_COUNT) : 'AUTO';
+    $('hudGear').textContent = (state.reverse ? 'REV · ' : '') + mode + ' · ' + state.controls.powerLimit + '%';
+  }
+
+  /* =================================================================
+     DRIVETRAIN — power cap, transmission, gears, reverse
+     ================================================================= */
+  function shiftGear(delta) {
+    if (state.controls.transmission !== 'manual') return;
+    const next = Math.max(1, Math.min(GEAR_COUNT, state.gear + delta));
+    if (next !== state.gear) { state.gear = next; log('Shift → gear ' + state.gear); }
+    updateDrivetrainUI();
+  }
+  function toggleReverse() {
+    state.reverse = !state.reverse;
+    log('Reverse ' + (state.reverse ? 'ENGAGED' : 'off'));
+    updateDrivetrainUI();
+  }
+  function setTransmission(mode) {
+    state.controls.transmission = mode;
+    if (mode === 'manual') state.gear = 1;
+    saveControls();
+    updateDrivetrainUI();
+    log('Transmission: ' + mode.toUpperCase());
+  }
+  function setPowerLimit(pct) {
+    state.controls.powerLimit = Math.max(10, Math.min(100, pct | 0));
+    saveControls();
+    updateDrivetrainUI();
+  }
+  function updateDrivetrainUI() {
+    $('powerVal').textContent = state.controls.powerLimit + '%';
+    $('powerSlider').value = state.controls.powerLimit;
+    const manual = state.controls.transmission === 'manual';
+    $('gearBox').classList.toggle('hidden', !manual);
+    document.querySelectorAll('#transSeg button').forEach((b) =>
+      b.classList.toggle('on', b.dataset.trans === state.controls.transmission));
+    $('gearVal').textContent = state.gear;
+    const rev = $('btnReverse');
+    rev.classList.toggle('on', state.reverse);
+    rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
   }
 
   function rateTick() {
@@ -992,6 +1136,20 @@
     });
   }
 
+  function ensureButtonSelects(count) {
+    [['mapShiftUp','btnShiftUp'], ['mapShiftDown','btnShiftDown'], ['mapReverse','btnReverse']].forEach(([selId, key]) => {
+      const sel = $(selId);
+      if (sel.options.length === count + 1) return; // +1 for "None"
+      sel.innerHTML = '<option value="">None</option>';
+      for (let i = 0; i < count; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = 'Button ' + i;
+        sel.appendChild(o);
+      }
+      sel.value = state.controls[key] === null ? '' : state.controls[key];
+    });
+  }
+
   function updateTester() {
     const pad = state.padIndex !== null ? navigator.getGamepads()[state.padIndex] : null;
     if (!pad) {
@@ -1002,6 +1160,7 @@
     }
     $('ctrlStatus').textContent = pad.id;
     ensureAxisSelects(pad.axes.length);
+    ensureButtonSelects(pad.buttons.length);
 
     const steerSel = parseInt($('mapSteer').value, 10);
     const thrSel = parseInt($('mapThrottle').value, 10);
@@ -1023,25 +1182,31 @@
     $('btnsLive').innerHTML = pad.buttons.map((b, i) =>
       `<span class="btn-pill ${b.pressed ? 'on' : ''}">${i}</span>`).join('');
 
-    // Live preview of the resulting servo/motor with the currently selected mapping.
+    // Live preview of the resulting servo/motor with the currently selected mapping,
+    // including the active power cap / gearbox / reverse state.
     const steerAxis = pad.axes[steerSel] ?? 0;
     const thrAxis = pad.axes[thrSel] ?? (($('mapRest').value === 'neg') ? -1 : 0);
     const dz = parseInt($('mapDeadzone').value, 10) || 0;
     const servo = axisToServo(steerAxis);
-    const motor = pedalToPwm(thrAxis, $('mapRest').value, dz);
+    const motor = scaleMotor(pedalToPwm(thrAxis, $('mapRest').value, dz));
     $('mapPreview').textContent = `SERVO ${servo}° · MOTOR ${motor}`;
   }
 
   function saveControlMapping() {
+    const btn = (id) => { const v = $(id).value; return v === '' ? null : (parseInt(v, 10)); };
     state.controls = {
+      ...state.controls, // keep powerLimit / transmission
       steer: parseInt($('mapSteer').value, 10) || 0,
       throttle: parseInt($('mapThrottle').value, 10) || 0,
       brake: parseInt($('mapBrake').value, 10) || 0,
       deadzone: Math.max(0, Math.min(60, parseInt($('mapDeadzone').value, 10) || 0)),
       rest: $('mapRest').value,
+      btnShiftUp: btn('mapShiftUp'),
+      btnShiftDown: btn('mapShiftDown'),
+      btnReverse: btn('mapReverse'),
     };
     saveControls();
-    log(`Control map saved: steer=Axis${state.controls.steer}, throttle=Axis${state.controls.throttle}, deadzone=${state.controls.deadzone}.`);
+    log(`Control map saved: steer=Axis${state.controls.steer}, throttle=Axis${state.controls.throttle}, deadzone=${state.controls.deadzone}, shift+=${state.controls.btnShiftUp ?? '—'}/shift-=${state.controls.btnShiftDown ?? '—'}, reverse=${state.controls.btnReverse ?? '—'}.`);
     closeCtrlModal();
   }
 
@@ -1124,6 +1289,15 @@
     $('btnSerialDisconnect').addEventListener('click', serialDisconnect);
     $('btnVideo').addEventListener('click', startVideo);
     $('btnFullscreen').addEventListener('click', toggleFullscreen);
+
+    // Drivetrain controls
+    $('powerSlider').addEventListener('input', (e) => setPowerLimit(parseInt(e.target.value, 10)));
+    document.querySelectorAll('#transSeg button').forEach((b) =>
+      b.addEventListener('click', () => setTransmission(b.dataset.trans)));
+    $('btnReverse').addEventListener('click', toggleReverse);
+    $('btnShiftUp').addEventListener('click', () => shiftGear(+1));
+    $('btnShiftDown').addEventListener('click', () => shiftGear(-1));
+    updateDrivetrainUI();
 
     // Roster controls
     $('btnAddCar').addEventListener('click', () => openCarModal(null));

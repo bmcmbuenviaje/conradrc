@@ -229,7 +229,20 @@ git push
 3. **Racing Wheel panel:** press any button/pedal on your wheel to bind it. Steering axis and poll rate appear live. If steering/throttle feel wrong, click **🎮 Test & Map Controls** (see below).
 4. **FPV Video panel:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use the **⛶ Fullscreen** button on the video to go full-screen (the HUD scales with it); press it again or hit `Esc` to exit.
 5. **Select Your Vehicle:** click a car in the grid. This sends a `CAR,..` peer swap; the car's MAC appears as the HUD **Target**.
-6. **Drive.** Steering and throttle bars, HUD numbers, and the TX-rate readout update at 50 Hz. The Telemetry Log shows outgoing `CAR`/`DRIVE` packets and any `ACK`/`RX` lines from the transmitter.
+6. **Drivetrain panel:** set how the car behaves (see below) — cap the top speed, pick auto vs. manual, engage reverse.
+7. **Drive.** Steering and throttle bars, HUD numbers, and the TX-rate readout update at 50 Hz. The Telemetry Log shows outgoing `CAR`/`DRIVE` packets and any `ACK`/`RX` lines from the transmitter.
+
+### ⚙️ Drivetrain (power, reverse, gearbox)
+
+Sitting in the sidebar, the **Drivetrain** panel shapes the throttle before it's sent — every setting is applied client-side and reflected in the video HUD (`REV · GEAR 3/6 · 80%`):
+
+- **Max Power** slider (10–100%) — a hard cap on top speed. *If the RC is too fast, drop this.* It scales the motor value linearly, so 50% ≈ half speed at full pedal.
+- **Transmission — Automatic / Manual:**
+  - **Automatic** (default) — full throttle range, no shifting.
+  - **Manual** — a 6-speed box where each gear caps speed to `gear ÷ 6` of the power limit (gear 1 ≈ 17%, gear 6 = 100%). You must shift up to go faster. Shift with the on-screen **▲ Shift Up / ▼ Shift Down** buttons or bind controller buttons in **Test & Map Controls**.
+- **◄ Reverse** — toggles direction; the motor value goes negative and the ESC drives the car backward. Bindable to a controller button too.
+
+Power limit, transmission mode, and the shift/reverse button bindings are saved to localStorage; the current gear and reverse toggle reset on reload (safe defaults).
 
 **Hot-swapping:** you can unplug/replug the USB transmitter or switch cars at any time. The app handles disconnects cleanly and re-asserts the current target when you reconnect.
 
@@ -241,7 +254,8 @@ Different wheels/pads expose their steering and pedals on different axis indices
 - **Buttons** — lights up the index of any button you press (handy for identifying paddles/triggers).
 - **Assign** the steering, throttle, and brake axes from the dropdowns; the mapped axes glow green.
 - Set the **throttle dead-zone** (0–255) to kill motor creep, and pick whether your throttle pedal **rests at −1.0** (typical wheel pedal) or **0.0** (trigger/joystick).
-- The **live preview** shows the resulting `SERVO°` / `MOTOR` values in real time. Click **Save Mapping** — it's stored in localStorage and applied immediately to the 50 Hz loop.
+- **Shift-up / Shift-down / Reverse buttons** — assign controller buttons to the gearbox and reverse. Watch the **Buttons** row light up to find each button's index, then pick it from the dropdown (or leave it **None** to use the on-screen buttons only).
+- The **live preview** shows the resulting `SERVO°` / `MOTOR` values in real time (including the active power cap, gear, and reverse). Click **Save Mapping** — it's stored in localStorage and applied immediately to the 50 Hz loop.
 
 ---
 
@@ -253,7 +267,7 @@ All packets are lean, newline-terminated ASCII at **115200 baud**.
 | Packet | Meaning |
 |--------|---------|
 | `CAR,AA,BB,CC,DD,EE,FF\n` | Swap the active ESP-NOW peer to this MAC (six hex bytes). |
-| `DRIVE,<servo>,<motor>\n` | Steering `0–180`, motor `0–255`. Sent only when a value changes. |
+| `DRIVE,<servo>,<motor>\n` | Steering `0–180`; motor **`-255…255`** (negative = reverse, `0` = stop). Already scaled by the power cap and gearbox. Sent only when a value changes. |
 
 ### Master transmitter → Browser (telemetry, shown in the log)
 | Packet | Meaning |
@@ -268,10 +282,12 @@ A packed `DriveFrame` struct — identical on both firmware files:
 ```c
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
-  uint8_t  motor;   // 0..255
+  int16_t  motor;   // -255..255 (negative = reverse, 0 = stop)
   uint32_t seq;     // rolling sequence for diagnostics
 } DriveFrame;
 ```
+
+The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward).
 
 ---
 
@@ -291,15 +307,19 @@ typedef struct __attribute__((packed)) {
 - **Throttle map:** pedal → `0–255`, with values `≤ dead-zone` forced to `0` (`pedalToPwm`).
 - To change the built-in **defaults** for every visitor, edit `DEFAULT_CONTROLS` in the source. If steering is reversed, swap the servo horn or invert in `axisToServo`.
 
+Speed can also be capped live from the **Drivetrain** panel (Max Power + manual gears) without touching any of this.
+
 **In the receiver** ([`car_receiver.ino`](electronics/car_receiver/car_receiver.ino)):
 | Constant | Default | Purpose |
 |----------|---------|---------|
+| `ESC_MIN_US` | `1000` | Full-**reverse** pulse width. |
 | `ESC_NEUTRAL_US` | `1500` | Motor-stopped pulse width. |
 | `ESC_MAX_US` | `2000` | Full-forward pulse width. |
 | `FAILSAFE_MS` | `500` | Cut throttle if no frame arrives within this window. |
 
+- The receiver maps the signed `motor` (`-255…255`) across `ESC_MIN_US … ESC_MAX_US`, so **reverse works out of the box — provided the ESC itself supports reverse.** Many hobby ESCs ship in forward/brake-only mode and need reverse enabled in their own programming (often a "double-tap" or LiPo/brake profile). A forward-only ESC will treat reverse pulses as brake/neutral.
 - If steering is reversed, swap the servo horn or invert in `axisToServo`.
-- For **forward + reverse**, widen the ESC map (e.g. `1000–2000 µs` centered at `1500`) and remap `motor` accordingly.
+- If you also want a hardware top-speed cap, narrow `ESC_MAX_US`/`ESC_MIN_US` toward neutral — but the in-app **Max Power** control is the easier knob.
 
 ---
 
@@ -313,6 +333,9 @@ typedef struct __attribute__((packed)) {
 | **`ESP32Servo.h: No such file`** | Install the **ESP32Servo** library (Part B). |
 | **Car doesn't move but `ACK,OK` appears** | Check wiring/common ground; verify servo on D18 and ESC on D19; make sure the ESC is armed/calibrated. |
 | **`ACK,FAIL` in the log** | Wrong MAC, car powered off, or out of ESP-NOW range. Confirm the registered MAC matches the car's `READY,RECEIVER` line. |
+| **Car is too fast / twitchy** | Lower **Max Power** in the Drivetrain panel, or switch to **Manual** and stay in a low gear. |
+| **Reverse does nothing** | The ESC isn't in a reverse-capable mode — enable reverse in the ESC's own programming. Confirm the app is sending a negative motor value (HUD shows `R`). |
+| **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Gear 1 ≈ 17% of Max Power, gear 6 = 100%. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
 | **Steering/throttle on the wrong axis, or reversed** | Open **🎮 Test & Map Controls**, wiggle each control to find its axis index, reassign, and Save. |
 | **Registered cars vanished / defaults came back** | The roster lives in that browser's localStorage. A different browser, profile, or cleared site data starts from `DEFAULT_VEHICLES`. Use **⇩ Export** to move a roster between machines. |

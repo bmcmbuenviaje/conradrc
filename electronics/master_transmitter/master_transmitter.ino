@@ -7,7 +7,7 @@
 
    Serial protocol (lean, newline-terminated ASCII from the web app):
      CAR,AA,BB,CC,DD,EE,FF   -> swap the active target peer (MAC bytes hex)
-     DRIVE,<servo>,<motor>   -> servo 0..180, motor 0..255
+     DRIVE,<servo>,<motor>   -> servo 0..180, motor -255..255 (neg = reverse)
 
    The active target is added/updated as an ESP-NOW peer on the fly.
    DRIVE frames are forwarded verbatim as a compact binary struct.
@@ -20,7 +20,7 @@
 /* ---------- Wire format shared with the receiver ---------- */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
-  uint8_t  motor;   // 0..255
+  int16_t  motor;   // -255..255  (negative = reverse, 0 = stop)
   uint32_t seq;     // rolling sequence for loss/latency diagnostics
 } DriveFrame;
 
@@ -114,13 +114,13 @@ static void handleDrive(char *args) {
   int servo = atoi(sTok);
   int motor = atoi(mTok);
   servo = constrain(servo, 0, 180);
-  motor = constrain(motor, 0, 255);
+  motor = constrain(motor, -255, 255); // signed: negative = reverse
 
   if (!peerActive) { Serial.println("ERR,NO_TARGET"); return; }
 
   DriveFrame frame;
   frame.servo = (uint8_t) servo;
-  frame.motor = (uint8_t) motor;
+  frame.motor = (int16_t) motor;
   frame.seq   = ++txSeq;
 
   esp_now_send(currentPeer, (uint8_t *) &frame, sizeof(frame));
