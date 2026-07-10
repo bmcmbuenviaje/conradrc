@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RC SIM ARCADE // LOBBY</title>
+  <style>
+    /* ============================================================
+       RC SIM RACING ARCADE LOBBY — static, dependency-free styles
+       Dark arcade theme, neon accents, CSS Grid / Flexbox layout
+       ============================================================ */
+    :root {
+      --bg-0:        #05060a;
+      --bg-1:        #0b0f1a;
+      --bg-2:        #121826;
+      --panel:       rgba(18, 24, 38, 0.85);
+      --stroke:      rgba(0, 229, 255, 0.25);
+      --neon-cyan:   #00e5ff;
+      --neon-magenta:#ff2e97;
+      --neon-lime:   #b6ff00;
+      --neon-amber:  #ffb020;
+      --text:        #e8f0ff;
+      --text-dim:    #7f8db0;
+      --ok:          #29ff9b;
+      --bad:         #ff4d5e;
+      --font:        'Segoe UI', 'Rajdhani', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(1200px 600px at 80% -10%, rgba(0,229,255,0.08), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, rgba(255,46,151,0.08), transparent 60%),
+        var(--bg-0);
+      min-height: 100vh;
+      letter-spacing: 0.4px;
+      overflow-x: hidden;
+    }
+
+    /* ---------- Header ---------- */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(0,229,255,0.06), transparent);
+      backdrop-filter: blur(6px);
+    }
+    .brand {
+      font-weight: 800;
+      font-size: 22px;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    .brand .accent { color: var(--neon-cyan); text-shadow: 0 0 12px rgba(0,229,255,0.7); }
+    .brand .accent-2 { color: var(--neon-magenta); text-shadow: 0 0 12px rgba(255,46,151,0.7); }
+
+    .status-chips { display: flex; gap: 12px; align-items: center; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px;
+      padding: 7px 12px; border-radius: 999px;
+      border: 1px solid var(--stroke); background: var(--bg-2); color: var(--text-dim);
+    }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 8px var(--bad); }
+    .chip.live .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+    .chip.live { color: var(--text); border-color: rgba(41,255,155,0.4); }
+
+    /* ---------- Layout ---------- */
+    main {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+      padding: 20px 28px 40px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 18px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.45);
+    }
+    .panel h2 {
+      font-size: 13px; text-transform: uppercase; letter-spacing: 2px;
+      color: var(--neon-cyan); margin-bottom: 14px; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .panel h2::before { content: '▸'; color: var(--neon-magenta); }
+
+    .sidebar { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ---------- Buttons ---------- */
+    button {
+      font-family: var(--font); cursor: pointer;
+      border-radius: 10px; border: 1px solid var(--stroke);
+      background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+      color: var(--text); padding: 11px 14px; font-size: 13px;
+      text-transform: uppercase; letter-spacing: 1.4px; font-weight: 600;
+      transition: all 0.15s ease; width: 100%;
+    }
+    button:hover:not(:disabled) {
+      border-color: var(--neon-cyan);
+      box-shadow: 0 0 18px rgba(0,229,255,0.35);
+      transform: translateY(-1px);
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.danger:hover:not(:disabled) { border-color: var(--bad); box-shadow: 0 0 18px rgba(255,77,94,0.4); }
+    .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+
+    .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; color: var(--text-dim); }
+    .kv b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    /* ---------- FPV Viewport ---------- */
+    .stage { display: flex; flex-direction: column; gap: 20px; }
+    .viewport {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      width: 100%;
+      background: #000;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 0 60px rgba(0,229,255,0.08) inset;
+    }
+    .viewport video { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(1.1) contrast(1.05); }
+    .viewport .no-signal {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: var(--text-dim); font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
+      background: repeating-linear-gradient(0deg, #060a12, #060a12 2px, #0a0f1c 2px, #0a0f1c 4px);
+    }
+    /* HUD overlay */
+    .hud { position: absolute; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
+    .hud .corner { position: absolute; padding: 10px 14px; font-size: 12px; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
+    .hud .tl { top: 0; left: 0; }
+    .hud .tr { top: 0; right: 0; text-align: right; }
+    .hud .bl { bottom: 0; left: 0; }
+    .hud .br { bottom: 0; right: 0; text-align: right; }
+    .hud .label { color: var(--neon-cyan); text-transform: uppercase; letter-spacing: 2px; font-size: 10px; }
+    .hud .val { font-size: 20px; font-weight: 700; }
+    .hud .reticle {
+      position: absolute; top: 50%; left: 50%; width: 46px; height: 46px;
+      transform: translate(-50%,-50%);
+      border: 1px solid rgba(0,229,255,0.5); border-radius: 50%;
+    }
+    .hud .reticle::before, .hud .reticle::after {
+      content:''; position:absolute; background: rgba(0,229,255,0.5);
+    }
+    .hud .reticle::before { left:50%; top:-10px; width:1px; height:66px; transform:translateX(-50%); }
+    .hud .reticle::after  { top:50%; left:-10px; height:1px; width:66px; transform:translateY(-50%); }
+    .hud .telem-bad .val { color: var(--bad); }
+    .hud .telem-ok .val  { color: var(--neon-lime); }
+
+    /* Steering / throttle bars */
+    .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .bar-wrap { background: var(--bg-2); border: 1px solid var(--stroke); border-radius: 10px; padding: 12px; }
+    .bar-wrap .label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-dim); }
+    .bar-track { position: relative; height: 12px; margin-top: 8px; background: var(--bg-0); border-radius: 6px; overflow: hidden; }
+    .bar-fill { position: absolute; top: 0; bottom: 0; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta)); box-shadow: 0 0 12px rgba(0,229,255,0.5); transition: width 0.05s linear, left 0.05s linear; }
+    .bar-center { position:absolute; left:50%; top:0; bottom:0; width:1px; background: rgba(255,255,255,0.25); }
+    .bar-val { font-size: 18px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+    /* ---------- Vehicle Grid ---------- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .car {
+      position: relative;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      padding: 18px;
+      background: linear-gradient(160deg, var(--bg-2), var(--bg-1));
+      cursor: pointer;
+      transition: all 0.18s ease;
+      overflow: hidden;
+    }
+    .car::after {
+      content:''; position:absolute; inset:0;
+      background: radial-gradient(400px 120px at 50% -20%, var(--glow), transparent 70%);
+      opacity: 0.4; pointer-events:none;
+    }
+    .car:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+    .car.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 12px 40px rgba(0,0,0,0.5); }
+    .car .sprite { font-size: 46px; line-height: 1; margin-bottom: 12px; }
+    .car .name { font-size: 17px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; }
+    .car .name span { color: var(--accent); }
+    .car .mac { font-size: 11px; color: var(--text-dim); margin-top: 6px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    .car .stats { display:flex; gap: 10px; margin-top: 14px; }
+    .car .stat { flex:1; }
+    .car .stat .n { font-size: 10px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px; }
+    .car .meter { height: 6px; background: var(--bg-0); border-radius: 3px; overflow:hidden; margin-top: 4px; }
+    .car .meter i { display:block; height:100%; background: var(--accent); }
+    .car .badge {
+      position:absolute; top:12px; right:12px; font-size:10px; letter-spacing:2px;
+      text-transform:uppercase; padding:4px 8px; border-radius:6px;
+      background: var(--accent); color:#04060a; font-weight:800; opacity:0; transition:opacity .18s;
+    }
+    .car.active .badge { opacity:1; }
+
+    footer { text-align:center; color:var(--text-dim); font-size:11px; padding: 20px; letter-spacing:2px; text-transform:uppercase; }
+
+    .console {
+      margin-top: 14px; height: 120px; overflow-y: auto;
+      background: var(--bg-0); border: 1px solid var(--stroke); border-radius: 10px;
+      padding: 10px; font-family: 'Consolas', monospace; font-size: 11px; color: var(--neon-lime);
+    }
+    .console .err { color: var(--bad); }
+    .console .tx { color: var(--neon-cyan); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">RC&nbsp;<span class="accent">SIM</span>&nbsp;<span class="accent-2">ARCADE</span>&nbsp;LOBBY</div>
+    <div class="status-chips">
+      <div class="chip" id="chipGamepad"><span class="dot"></span> Wheel</div>
+      <div class="chip" id="chipSerial"><span class="dot"></span> Transmitter</div>
+      <div class="chip" id="chipVideo"><span class="dot"></span> FPV Feed</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ SIDEBAR: connection panels ============ -->
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>USB Transmitter</h2>
+        <div class="kv"><span>Link</span><b id="serialState">DISCONNECTED</b></div>
+        <div class="kv"><span>Baud</span><b>115200</b></div>
+        <div class="btn-row">
+          <button id="btnSerialConnect">Connect</button>
+          <button id="btnSerialDisconnect" class="danger" disabled>Disconnect</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Racing Wheel</h2>
+        <div class="kv"><span>Device</span><b id="padName">NONE</b></div>
+        <div class="kv"><span>Poll Rate</span><b id="padHz">— Hz</b></div>
+        <div class="kv"><span>Steer Axis 0</span><b id="padAxis">0.00</b></div>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
+          Press any button on your wheel / pad to bind. Polling runs at 50&nbsp;Hz.
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>FPV Video</h2>
+        <div class="kv"><span>Capture</span><b>640×480 @ 60fps</b></div>
+        <button id="btnVideo">Start Frame Grabber</button>
+        <div class="btn-row">
+          <select id="videoDevice" style="width:100%;padding:9px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
+            <option value="">— default source —</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Telemetry Log</h2>
+        <div class="console" id="log"></div>
+      </section>
+    </aside>
+
+    <!-- ============ STAGE: FPV + telemetry + car grid ============ -->
+    <section class="stage">
+      <div class="viewport">
+        <video id="fpv" autoplay playsinline muted></video>
+        <div class="no-signal" id="noSignal">◍ NO SIGNAL ◍</div>
+        <div class="hud">
+          <div class="corner tl">
+            <div class="label">Target</div>
+            <div class="val" id="hudTarget">—</div>
+          </div>
+          <div class="corner tr telem-ok" id="hudLinkBox">
+            <div class="label">Link / TX Rate</div>
+            <div class="val" id="hudRate">0 Hz</div>
+          </div>
+          <div class="corner bl">
+            <div class="label">Steering</div>
+            <div class="val" id="hudSteer">90°</div>
+          </div>
+          <div class="corner br">
+            <div class="label">Throttle</div>
+            <div class="val" id="hudThrottle">0</div>
+          </div>
+          <div class="reticle"></div>
+        </div>
+      </div>
+
+      <div class="bars">
+        <div class="bar-wrap">
+          <div class="label">Steering Servo (0–180°)</div>
+          <div class="bar-track"><div class="bar-center"></div><div class="bar-fill" id="steerBar" style="left:50%;width:2px;"></div></div>
+          <div class="bar-val"><span id="steerVal">90</span>°</div>
+        </div>
+        <div class="bar-wrap">
+          <div class="label">Throttle / ESC (0–255)</div>
+          <div class="bar-track"><div class="bar-fill" id="throttleBar" style="left:0;width:0%;"></div></div>
+          <div class="bar-val" id="throttleVal">0</div>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Select Your Vehicle</h2>
+        <div class="grid" id="carGrid"></div>
+      </section>
+    </section>
+  </main>
+
+  <footer>ESP-NOW MESH · WEB SERIAL 115200 · &lt;20MS TARGET LATENCY · STATIC BUILD</footer>
+
+  <script>
+  /* =================================================================
+     RC SIM RACING ARCADE LOBBY — application logic (pure JS)
+     - Web Gamepad API  : polled @ 50 Hz
+     - Web Serial API   : 115200 baud, lean newline-terminated packets
+     - Web MediaDevices : 640x480 @ 60fps FPV capture
+     ================================================================= */
+  'use strict';
+
+  /* ---------------- Vehicle roster ----------------
+     Each car maps to a physical receiver by MAC address. */
+  const VEHICLES = [
+    { id: 'rally',  name: 'RALLY <span>CAR</span>',  sprite: '🏎️', mac: 'AA:BB:CC:11:22:33',
+      accent: '#00e5ff', glow: 'rgba(0,229,255,0.35)',  stats: { spd: 78, grip: 90, acc: 70 } },
+    { id: 'buggy',  name: 'DUNE <span>BUGGY</span>', sprite: '🚙', mac: 'AA:BB:CC:44:55:66',
+      accent: '#b6ff00', glow: 'rgba(182,255,0,0.30)',  stats: { spd: 65, grip: 72, acc: 95 } },
+    { id: 'drift',  name: 'DRIFT <span>KING</span>', sprite: '🚗', mac: 'AA:BB:CC:77:88:99',
+      accent: '#ff2e97', glow: 'rgba(255,46,151,0.32)', stats: { spd: 88, grip: 55, acc: 82 } },
+  ];
+
+  /* ---------------- Tuning constants ---------------- */
+  const POLL_HZ      = 50;                 // gamepad + TX loop frequency
+  const POLL_MS      = 1000 / POLL_HZ;     // 20 ms period
+  const DEADZONE     = 5;                  // throttle cutoff (>5 of 0–255) to kill motor creep
+  const AXIS_STEER   = 0;                  // wheel steering axis
+  const AXIS_THROTTLE= 1;                  // primary pedal axis (gas)
+  const AXIS_BRAKE   = 2;                  // brake pedal axis (optional / reverse)
+
+  /* ---------------- State ---------------- */
+  const state = {
+    port: null, writer: null, keepReading: false, reader: null,
+    padIndex: null,
+    selected: null,
+    lastSteer: 90, lastThrottle: 0,
+    lastSent: '', txCount: 0, txWindowStart: performance.now(),
+    encoder: new TextEncoder(),
+  };
+
+  /* ---------------- DOM helpers ---------------- */
+  const $ = (id) => document.getElementById(id);
+  function log(msg, cls) {
+    const el = $('log');
+    const line = document.createElement('div');
+    if (cls) line.className = cls;
+    const t = new Date().toLocaleTimeString();
+    line.textContent = `[${t}] ${msg}`;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+    while (el.childElementCount > 200) el.removeChild(el.firstChild);
+  }
+  function setChip(id, live) { $(id).classList.toggle('live', !!live); }
+
+  /* =================================================================
+     CALIBRATION MATH — the single source of truth for scaling
+     ================================================================= */
+
+  // Steering: axis [-1.0, 1.0] -> servo degrees [0, 180], center = 90
+  function axisToServo(axis) {
+    const clamped = Math.max(-1, Math.min(1, axis));
+    return Math.round((clamped + 1) * 90); // -1->0, 0->90, 1->180
+  }
+
+  // Throttle pedal: raw axis -> 0..255 with a dead-zone cutoff (>5) to stop creep.
+  // Many wheel pedals rest at -1.0 (released) and travel to +1.0 (floored);
+  // we normalize that to a 0..1 press amount first.
+  function pedalToPwm(axisRaw, restNegative = true) {
+    let press = restNegative ? (axisRaw + 1) / 2 : axisRaw; // -> 0..1
+    press = Math.max(0, Math.min(1, press));
+    let pwm = Math.round(press * 255);
+    if (pwm <= DEADZONE) pwm = 0; // dead-zone cutoff prevents motor creep
+    return pwm;
+  }
+
+  /* =================================================================
+     WEB SERIAL — safe open / write / close / disconnect
+     ================================================================= */
+  async function serialConnect() {
+    if (!('serial' in navigator)) { log('Web Serial not supported in this browser.', 'err'); return; }
+    try {
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      state.port = port;
+      state.writer = port.writable.getWriter();
+      state.keepReading = true;
+      readLoop(port); // non-blocking drain of inbound telemetry
+      $('serialState').textContent = 'CONNECTED';
+      $('btnSerialConnect').disabled = true;
+      $('btnSerialDisconnect').disabled = false;
+      setChip('chipSerial', true);
+      log('Transmitter link open @ 115200 baud.');
+      // Re-assert current target on (re)connect
+      if (state.selected) sendCarSwap(state.selected);
+    } catch (err) {
+      log('Serial connect failed: ' + err.message, 'err');
+    }
+  }
+
+  async function serialDisconnect() {
+    state.keepReading = false;
+    try {
+      if (state.reader) { await state.reader.cancel().catch(() => {}); }
+      if (state.writer) { await state.writer.close().catch(() => {}); state.writer.releaseLock?.(); }
+      if (state.port)   { await state.port.close().catch(() => {}); }
+    } catch (err) {
+      log('Disconnect warning: ' + err.message, 'err');
+    } finally {
+      state.port = state.writer = state.reader = null;
+      $('serialState').textContent = 'DISCONNECTED';
+      $('btnSerialConnect').disabled = false;
+      $('btnSerialDisconnect').disabled = true;
+      setChip('chipSerial', false);
+      log('Transmitter link closed.');
+    }
+  }
+
+  // Drain inbound bytes so the underlying stream never stalls; surface telemetry lines.
+  async function readLoop(port) {
+    const decoder = new TextDecoderStream();
+    const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
+    const reader = decoder.readable.getReader();
+    state.reader = reader;
+    let buf = '';
+    try {
+      while (state.keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          buf += value;
+          let idx;
+          while ((idx = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, idx).trim();
+            buf = buf.slice(idx + 1);
+            if (line) log('RX ◂ ' + line);
+          }
+        }
+      }
+    } catch (err) {
+      if (state.keepReading) log('Read loop error: ' + err.message, 'err');
+    } finally {
+      reader.releaseLock();
+      await closed;
+    }
+  }
+
+  // Lean write; silently no-ops when disconnected so the 50Hz loop never throws.
+  async function serialWrite(str) {
+    if (!state.writer) return;
+    try {
+      await state.writer.write(state.encoder.encode(str));
+      state.txCount++;
+    } catch (err) {
+      log('TX error, dropping link: ' + err.message, 'err');
+      serialDisconnect();
+    }
+  }
+
+  // Handle physical USB yank without crashing the app.
+  if ('serial' in navigator) {
+    navigator.serial.addEventListener('disconnect', (e) => {
+      if (state.port && e.target === state.port) {
+        log('USB transmitter physically removed.', 'err');
+        serialDisconnect();
+      }
+    });
+  }
+
+  /* ---------------- Packet builders ---------------- */
+  function sendCarSwap(vehicle) {
+    // "CAR,AA,BB,CC,DD,EE,FF\n"
+    const octets = vehicle.mac.split(':').join(',');
+    serialWrite(`CAR,${octets}\n`);
+    log('TX ▸ CAR swap → ' + vehicle.mac, 'tx');
+  }
+  function sendDrive(servoDeg, motorPwm) {
+    // "DRIVE,180,255\n" — only transmit on change to keep the buffer lean
+    const packet = `DRIVE,${servoDeg},${motorPwm}\n`;
+    if (packet === state.lastSent) return;
+    state.lastSent = packet;
+    serialWrite(packet);
+  }
+
+  /* =================================================================
+     VEHICLE GRID
+     ================================================================= */
+  function buildGrid() {
+    const grid = $('carGrid');
+    VEHICLES.forEach((v) => {
+      const el = document.createElement('div');
+      el.className = 'car';
+      el.style.setProperty('--accent', v.accent);
+      el.style.setProperty('--glow', v.glow);
+      el.innerHTML = `
+        <div class="badge">Selected</div>
+        <div class="sprite">${v.sprite}</div>
+        <div class="name">${v.name}</div>
+        <div class="mac">${v.mac}</div>
+        <div class="stats">
+          ${['spd','grip','acc'].map((k) => `
+            <div class="stat">
+              <div class="n">${k}</div>
+              <div class="meter"><i style="width:${v.stats[k]}%"></i></div>
+            </div>`).join('')}
+        </div>`;
+      el.addEventListener('click', () => selectVehicle(v, el));
+      grid.appendChild(el);
+    });
+  }
+
+  function selectVehicle(vehicle, el) {
+    document.querySelectorAll('.car').forEach((c) => c.classList.remove('active'));
+    el.classList.add('active');
+    state.selected = vehicle;
+    $('hudTarget').textContent = vehicle.mac.slice(-8);
+    sendCarSwap(vehicle);
+    log('Vehicle armed: ' + vehicle.name.replace(/<[^>]+>/g, ''));
+  }
+
+  /* =================================================================
+     WEB GAMEPAD — bind + poll @ 50 Hz, fold into the TX loop
+     ================================================================= */
+  window.addEventListener('gamepadconnected', (e) => {
+    state.padIndex = e.gamepad.index;
+    $('padName').textContent = e.gamepad.id.slice(0, 22);
+    setChip('chipGamepad', true);
+    log('Wheel bound: ' + e.gamepad.id);
+  });
+  window.addEventListener('gamepaddisconnected', (e) => {
+    if (e.gamepad.index === state.padIndex) {
+      state.padIndex = null;
+      $('padName').textContent = 'NONE';
+      setChip('chipGamepad', false);
+      log('Wheel disconnected.', 'err');
+    }
+  });
+
+  function readGamepad() {
+    if (state.padIndex === null) return null;
+    const pads = navigator.getGamepads();
+    const pad = pads[state.padIndex];
+    if (!pad) return null;
+    const steerAxis = pad.axes[AXIS_STEER] ?? 0;
+    // Prefer a dedicated throttle axis; fall back to trigger button if absent.
+    let throttleAxis = pad.axes[AXIS_THROTTLE];
+    if (throttleAxis === undefined && pad.buttons[7]) throttleAxis = pad.buttons[7].value * 2 - 1;
+    return { steerAxis, throttleAxis: throttleAxis ?? -1 };
+  }
+
+  /* =================================================================
+     50 Hz CONTROL LOOP — poll input, calibrate, transmit, paint HUD
+     ================================================================= */
+  function controlTick() {
+    const input = readGamepad();
+    let servo = 90, pwm = 0;
+
+    if (input) {
+      servo = axisToServo(input.steerAxis);
+      pwm   = pedalToPwm(input.throttleAxis, true);
+      $('padAxis').textContent = input.steerAxis.toFixed(2);
+    }
+
+    state.lastSteer = servo;
+    state.lastThrottle = pwm;
+
+    if (state.selected) sendDrive(servo, pwm);
+
+    paintHud(servo, pwm);
+  }
+
+  function paintHud(servo, pwm) {
+    // Numeric HUD
+    $('hudSteer').textContent = servo + '°';
+    $('hudThrottle').textContent = pwm;
+    $('steerVal').textContent = servo;
+    $('throttleVal').textContent = pwm;
+
+    // Steering bar: draw outward from center (90)
+    const pct = (servo / 180) * 100;
+    const steerBar = $('steerBar');
+    if (servo >= 90) { steerBar.style.left = '50%'; steerBar.style.width = (pct - 50) + '%'; }
+    else             { steerBar.style.left = pct + '%'; steerBar.style.width = (50 - pct) + '%'; }
+
+    // Throttle bar
+    $('throttleBar').style.width = ((pwm / 255) * 100) + '%';
+  }
+
+  // TX-rate telemetry — refresh once per second
+  function rateTick() {
+    const now = performance.now();
+    const dt = (now - state.txWindowStart) / 1000;
+    const hz = dt > 0 ? Math.round(state.txCount / dt) : 0;
+    $('hudRate').textContent = hz + ' Hz';
+    $('padHz').textContent = state.padIndex !== null ? POLL_HZ + ' Hz' : '— Hz';
+    const box = $('hudLinkBox');
+    box.className = 'corner tr ' + (state.writer ? 'telem-ok' : 'telem-bad');
+    state.txCount = 0;
+    state.txWindowStart = now;
+  }
+
+  /* =================================================================
+     WEB MEDIADEVICES — 640x480 @ 60fps FPV frame grabber
+     ================================================================= */
+  async function enumerateVideo() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const sel = $('videoDevice');
+      sel.length = 1;
+      devices.filter((d) => d.kind === 'videoinput').forEach((d) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('Camera ' + (sel.length));
+        sel.appendChild(opt);
+      });
+    } catch (_) { /* labels require permission; ignore pre-grant */ }
+  }
+
+  async function startVideo() {
+    if (!navigator.mediaDevices?.getUserMedia) { log('MediaDevices unsupported.', 'err'); return; }
+    const deviceId = $('videoDevice').value;
+    const constraints = {
+      audio: false,
+      video: {
+        width:  { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 60 },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      },
+    };
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const video = $('fpv');
+      video.srcObject = stream;
+      $('noSignal').style.display = 'none';
+      setChip('chipVideo', true);
+      const track = stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      log(`FPV feed live: ${s.width}×${s.height} @ ${Math.round(s.frameRate || 0)}fps`);
+      await enumerateVideo(); // labels now available
+      track.addEventListener('ended', () => {
+        setChip('chipVideo', false);
+        $('noSignal').style.display = 'flex';
+        log('FPV feed ended.', 'err');
+      });
+    } catch (err) {
+      log('Video start failed: ' + err.message, 'err');
+    }
+  }
+
+  /* =================================================================
+     BOOT
+     ================================================================= */
+  function boot() {
+    buildGrid();
+    enumerateVideo();
+    $('btnSerialConnect').addEventListener('click', serialConnect);
+    $('btnSerialDisconnect').addEventListener('click', serialDisconnect);
+    $('btnVideo').addEventListener('click', startVideo);
+
+    // Drive the control loop at 50 Hz and the rate readout at 1 Hz.
+    setInterval(controlTick, POLL_MS);
+    setInterval(rateTick, 1000);
+
+    log('Lobby initialized. Connect transmitter, wheel, and FPV feed to race.');
+    if (!('serial' in navigator)) log('⚠ Web Serial requires Chrome/Edge (ChromeOS or Windows).', 'err');
+  }
+
+  boot();
+  </script>
+</body>
+</html>
