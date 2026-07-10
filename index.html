@@ -358,6 +358,7 @@
 
         <div class="gearbox hidden" id="gearBox">
           <div class="gear-display"><span id="gearVal">1</span><small> / 6</small></div>
+          <div style="text-align:center;font-size:12px;color:var(--text-dim);margin-top:2px;">top speed cap <b id="gearCap" style="color:var(--neon-lime);">10%</b></div>
           <div class="gear-btns">
             <button id="btnShiftDown">▼ Shift Down</button>
             <button id="btnShiftUp">▲ Shift Up</button>
@@ -572,7 +573,9 @@
     transmission: 'auto',     // 'auto' | 'manual'
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
   };
-  const GEAR_COUNT = 6;
+  // Per-gear top-speed cap, as % of Max Power. Index 0 = gear 1 ... index 5 = gear 6.
+  const GEAR_CAPS = [10, 20, 40, 60, 80, 100];
+  const GEAR_COUNT = GEAR_CAPS.length;
 
   const LS_VEHICLES = 'rcarcade.vehicles.v1';
   const LS_CONTROLS = 'rcarcade.controls.v1';
@@ -656,10 +659,10 @@
   }
   // Fraction of full power allowed by the current gearbox state.
   //  - automatic: full range (1.0)
-  //  - manual:    gear/GEAR_COUNT, so gear 1 = 1/6 top speed ... gear 6 = full
+  //  - manual:    per-gear cap from GEAR_CAPS (10/20/40/60/80/100%)
   function gearFactor() {
     if (state.controls.transmission !== 'manual') return 1;
-    return state.gear / GEAR_COUNT;
+    return (GEAR_CAPS[state.gear - 1] ?? 100) / 100;
   }
   // Combine base pedal PWM with the power cap + gearbox, then apply direction.
   // Returns a SIGNED motor value in -255..255 (negative = reverse).
@@ -1089,6 +1092,7 @@
     document.querySelectorAll('#transSeg button').forEach((b) =>
       b.classList.toggle('on', b.dataset.trans === state.controls.transmission));
     $('gearVal').textContent = state.gear;
+    $('gearCap').textContent = GEAR_CAPS[state.gear - 1] + '%';
     const rev = $('btnReverse');
     rev.classList.toggle('on', state.reverse);
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';

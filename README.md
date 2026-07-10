@@ -239,7 +239,7 @@ Sitting in the sidebar, the **Drivetrain** panel shapes the throttle before it's
 - **Max Power** slider (10–100%) — a hard cap on top speed. *If the RC is too fast, drop this.* It scales the motor value linearly, so 50% ≈ half speed at full pedal.
 - **Transmission — Automatic / Manual:**
   - **Automatic** (default) — full throttle range, no shifting.
-  - **Manual** — a 6-speed box where each gear caps speed to `gear ÷ 6` of the power limit (gear 1 ≈ 17%, gear 6 = 100%). You must shift up to go faster. Shift with the on-screen **▲ Shift Up / ▼ Shift Down** buttons or bind controller buttons in **Test & Map Controls**.
+  - **Manual** — a 6-speed box where each gear caps top speed to a share of the power limit: **gear 1 = 10%, 2 = 20%, 3 = 40%, 4 = 60%, 5 = 80%, 6 = 100%**. You must shift up to go faster. Shift with the on-screen **▲ Shift Up / ▼ Shift Down** buttons or bind controller buttons in **Test & Map Controls**. (These caps live in the `GEAR_CAPS` array in `index.html` if you want a different curve.)
 - **◄ Reverse** — toggles direction; the motor value goes negative and the ESC drives the car backward. Bindable to a controller button too.
 
 Power limit, transmission mode, and the shift/reverse button bindings are saved to localStorage; the current gear and reverse toggle reset on reload (safe defaults).
@@ -335,7 +335,7 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 | **`ACK,FAIL` in the log** | Wrong MAC, car powered off, or out of ESP-NOW range. Confirm the registered MAC matches the car's `READY,RECEIVER` line. |
 | **Car is too fast / twitchy** | Lower **Max Power** in the Drivetrain panel, or switch to **Manual** and stay in a low gear. |
 | **Reverse does nothing** | The ESC isn't in a reverse-capable mode — enable reverse in the ESC's own programming. Confirm the app is sending a negative motor value (HUD shows `R`). |
-| **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Gear 1 ≈ 17% of Max Power, gear 6 = 100%. |
+| **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Caps are 10/20/40/60/80/100% of Max Power for gears 1–6. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
 | **Steering/throttle on the wrong axis, or reversed** | Open **🎮 Test & Map Controls**, wiggle each control to find its axis index, reassign, and Save. |
 | **Registered cars vanished / defaults came back** | The roster lives in that browser's localStorage. A different browser, profile, or cleared site data starts from `DEFAULT_VEHICLES`. Use **⇩ Export** to move a roster between machines. |
