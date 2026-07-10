@@ -381,6 +381,7 @@
         <div class="panel-head">
           <h2>Select Your Vehicle</h2>
           <div style="display:flex;gap:8px;">
+            <button class="btn-sm" id="btnImport" title="Paste a roster JSON">⇧ Import</button>
             <button class="btn-sm" id="btnExport" title="Copy roster JSON to clipboard">⇩ Export</button>
             <button class="btn-sm primary" id="btnAddCar">＋ Register Car</button>
           </div>
@@ -425,6 +426,31 @@
       <div class="modal-actions">
         <button class="primary" id="carSave">Save Vehicle</button>
         <button id="carCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: Import roster ============ -->
+  <div class="overlay" id="importOverlay">
+    <div class="modal">
+      <h3>Import Roster</h3>
+      <div class="field">
+        <label for="importText">Paste roster JSON (from ⇩ Export)</label>
+        <textarea id="importText" rows="9" spellcheck="false"
+          style="width:100%;padding:10px 12px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:'Consolas',monospace;font-size:12px;resize:vertical;"
+          placeholder='[ { "name": "RALLY CAR", "mac": "AA:BB:CC:11:22:33", "sprite": "🏎️", "accent": "#00e5ff", "stats": { "spd": 78, "grip": 90, "acc": 70 } } ]'></textarea>
+      </div>
+      <div class="field">
+        <label for="importMode">Mode</label>
+        <select id="importMode">
+          <option value="merge">Merge — add new MACs, update existing ones</option>
+          <option value="replace">Replace — overwrite the entire lobby</option>
+        </select>
+      </div>
+      <div class="err-msg" id="importErr"></div>
+      <div class="modal-actions">
+        <button class="primary" id="importSave">Import</button>
+        <button id="importCancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -802,6 +828,70 @@
     console.log('RC ARCADE ROSTER:\n' + json);
   }
 
+  // Validate + normalize a pasted roster array. Returns { cars } or { error }.
+  function parseRosterJson(text) {
+    let data;
+    try { data = JSON.parse(text); } catch (e) { return { error: 'Not valid JSON: ' + e.message }; }
+    if (!Array.isArray(data)) return { error: 'Expected a JSON array of vehicles.' };
+    if (!data.length) return { error: 'Array is empty — nothing to import.' };
+
+    const clampStat = (x) => Math.max(0, Math.min(100, parseInt(x, 10) || 0));
+    const cars = [];
+    const seen = new Set();
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i] || {};
+      const name = String(v.name || '').trim();
+      if (!name) return { error: `Entry #${i + 1}: missing "name".` };
+      const mac = normalizeMac(v.mac);
+      if (!mac) return { error: `Entry #${i + 1} ("${name}"): invalid MAC "${v.mac}".` };
+      if (seen.has(mac)) return { error: `Duplicate MAC ${mac} inside the pasted list.` };
+      seen.add(mac);
+      cars.push({
+        id: 'car_' + mac.replace(/:/g, '').toLowerCase(),
+        name,
+        sprite: String(v.sprite || '🚗').slice(0, 4),
+        mac,
+        accent: /^#[0-9a-f]{6}$/i.test(v.accent || '') ? v.accent : '#00e5ff',
+        stats: { spd: clampStat(v.stats?.spd ?? 70), grip: clampStat(v.stats?.grip ?? 70), acc: clampStat(v.stats?.acc ?? 70) },
+      });
+    }
+    return { cars };
+  }
+
+  function openImportModal() {
+    $('importText').value = '';
+    $('importErr').textContent = '';
+    $('importMode').value = 'merge';
+    $('importOverlay').classList.add('open');
+    $('importText').focus();
+  }
+  function closeImportModal() { $('importOverlay').classList.remove('open'); }
+
+  function doImport() {
+    const { cars, error } = parseRosterJson($('importText').value);
+    if (error) { $('importErr').textContent = error; return; }
+
+    if ($('importMode').value === 'replace') {
+      state.vehicles = cars;
+      if (!state.vehicles.some((v) => v.id === state.selectedId)) {
+        state.selectedId = null; $('hudTarget').textContent = '—';
+      }
+      log(`Roster replaced — ${cars.length} car(s) imported.`);
+    } else {
+      // Merge by MAC: update existing, append new.
+      let added = 0, updated = 0;
+      cars.forEach((c) => {
+        const existing = state.vehicles.find((v) => v.mac === c.mac);
+        if (existing) { c.id = existing.id; Object.assign(existing, c); updated++; }
+        else { state.vehicles.push(c); added++; }
+      });
+      log(`Roster merged — ${added} added, ${updated} updated.`);
+    }
+    saveRoster();
+    renderGrid();
+    closeImportModal();
+  }
+
   /* =================================================================
      WEB GAMEPAD — bind + poll @ 50 Hz
      ================================================================= */
@@ -1042,6 +1132,12 @@
     $('carCancel').addEventListener('click', closeCarModal);
     $('carOverlay').addEventListener('click', (e) => { if (e.target === $('carOverlay')) closeCarModal(); });
 
+    // Import roster
+    $('btnImport').addEventListener('click', openImportModal);
+    $('importSave').addEventListener('click', doImport);
+    $('importCancel').addEventListener('click', closeImportModal);
+    $('importOverlay').addEventListener('click', (e) => { if (e.target === $('importOverlay')) closeImportModal(); });
+
     // Controls tester
     $('btnTestControls').addEventListener('click', openCtrlModal);
     $('ctrlSave').addEventListener('click', saveControlMapping);
@@ -1052,7 +1148,7 @@
 
     // Global ESC closes any open modal
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); }
+      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); closeImportModal(); }
     });
 
     setInterval(controlTick, POLL_MS);

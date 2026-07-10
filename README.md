@@ -178,7 +178,7 @@ The lobby has a built-in car manager, so you never have to touch the code:
 Notes:
 - The MAC field accepts colons, dashes, or plain hex (`AA:BB:CC:DD:EE:FF`, `aa-bb-cc-dd-ee-ff`, or `aabbccddeeff`) — it's normalized and validated for you, and duplicate MACs are rejected.
 - Your roster is saved in that browser's **localStorage**, so it persists across reloads **on that machine/profile only**. Each cabinet keeps its own list.
-- To copy a roster between machines (or to bake it into the source), click **⇩ Export** — it copies the roster as JSON to your clipboard.
+- **⇩ Export** copies the roster as JSON to your clipboard; **⇧ Import** pastes one back in — with a **Merge** mode (add new MACs, update existing ones by MAC) or **Replace** mode (overwrite the whole lobby). This is how you sync one roster across cabinets: Export on the machine you set up, Import on the rest.
 
 ### Option 2 — Bake defaults into the source
 
