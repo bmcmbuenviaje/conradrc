@@ -95,6 +95,8 @@
       display: flex; align-items: center; gap: 8px;
     }
     .panel h2::before { content: '▸'; color: var(--neon-magenta); }
+    .panel-head { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
+    .panel-head h2 { margin-bottom: 0; }
 
     .sidebar { display: flex; flex-direction: column; gap: 20px; }
 
@@ -114,7 +116,10 @@
     }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
     button.danger:hover:not(:disabled) { border-color: var(--bad); box-shadow: 0 0 18px rgba(255,77,94,0.4); }
+    button.primary { border-color: var(--neon-lime); color: var(--neon-lime); }
+    button.primary:hover:not(:disabled) { box-shadow: 0 0 18px rgba(182,255,0,0.4); }
     .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+    .btn-sm { width: auto; padding: 8px 12px; font-size: 11px; }
 
     .kv { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; color: var(--text-dim); }
     .kv b { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -132,6 +137,8 @@
       box-shadow: 0 0 60px rgba(0,229,255,0.08) inset;
     }
     .viewport video { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(1.1) contrast(1.05); }
+    .viewport:fullscreen { aspect-ratio: auto; width: 100vw; height: 100vh; border-radius: 0; }
+    .viewport:fullscreen video { object-fit: contain; }
     .viewport .no-signal {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       color: var(--text-dim); font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
@@ -158,6 +165,13 @@
     .hud .reticle::after  { top:50%; left:-10px; height:1px; width:66px; transform:translateY(-50%); }
     .hud .telem-bad .val { color: var(--bad); }
     .hud .telem-ok .val  { color: var(--neon-lime); }
+    /* Fullscreen toggle — lives above the HUD, receives clicks */
+    .vp-btn {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+      width: auto; padding: 8px 14px; font-size: 11px; opacity: 0.85; z-index: 5;
+      background: rgba(5,6,10,0.75); backdrop-filter: blur(4px);
+    }
+    .vp-btn:hover { opacity: 1; }
 
     /* Steering / throttle bars */
     .bars { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -200,12 +214,24 @@
     .car .stat .n { font-size: 10px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1px; }
     .car .meter { height: 6px; background: var(--bg-0); border-radius: 3px; overflow:hidden; margin-top: 4px; }
     .car .meter i { display:block; height:100%; background: var(--accent); }
-    .car .badge {
-      position:absolute; top:12px; right:12px; font-size:10px; letter-spacing:2px;
+    .car .active-tag {
+      position:absolute; top:12px; left:12px; font-size:10px; letter-spacing:2px;
       text-transform:uppercase; padding:4px 8px; border-radius:6px;
-      background: var(--accent); color:#04060a; font-weight:800; opacity:0; transition:opacity .18s;
+      background: var(--accent); color:#04060a; font-weight:800; opacity:0; transition:opacity .18s; z-index:2;
     }
-    .car.active .badge { opacity:1; }
+    .car.active .active-tag { opacity:1; }
+    .car .car-actions { position:absolute; top:10px; right:10px; display:flex; gap:6px; z-index:3; }
+    .car .icon-btn {
+      width: 30px; height: 30px; padding: 0; font-size: 13px; border-radius: 8px;
+      display:flex; align-items:center; justify-content:center;
+      background: rgba(5,6,10,0.7); border:1px solid var(--stroke);
+    }
+    .car.add-card {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      text-align:center; color:var(--text-dim); border-style:dashed; min-height:180px;
+    }
+    .car.add-card .plus { font-size:40px; color:var(--neon-lime); line-height:1; }
+    .car.add-card:hover { border-color: var(--neon-lime); color: var(--text); }
 
     footer { text-align:center; color:var(--text-dim); font-size:11px; padding: 20px; letter-spacing:2px; text-transform:uppercase; }
 
@@ -216,6 +242,48 @@
     }
     .console .err { color: var(--bad); }
     .console .tx { color: var(--neon-cyan); }
+
+    /* ---------- Modal ---------- */
+    .overlay {
+      position: fixed; inset: 0; z-index: 50; display: none;
+      align-items: center; justify-content: center; padding: 20px;
+      background: rgba(3,4,8,0.78); backdrop-filter: blur(4px);
+    }
+    .overlay.open { display: flex; }
+    .modal {
+      width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto;
+      background: var(--bg-1); border: 1px solid var(--stroke); border-radius: 16px;
+      box-shadow: 0 20px 80px rgba(0,0,0,0.7); padding: 24px;
+    }
+    .modal h3 {
+      font-size: 16px; text-transform: uppercase; letter-spacing: 2px; color: var(--neon-cyan);
+      margin-bottom: 18px; display:flex; align-items:center; gap:8px;
+    }
+    .modal h3::before { content:'▸'; color: var(--neon-magenta); }
+    .field { margin-bottom: 14px; }
+    .field label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-dim); margin-bottom:6px; }
+    .field input[type=text], .field input[type=number], .field select {
+      width:100%; padding:10px 12px; background:var(--bg-2); color:var(--text);
+      border:1px solid var(--stroke); border-radius:8px; font-family:var(--font); font-size:14px;
+    }
+    .field input[type=color] { width:52px; height:38px; padding:2px; background:var(--bg-2); border:1px solid var(--stroke); border-radius:8px; cursor:pointer; }
+    .field-row { display:flex; gap:12px; }
+    .field-row .field { flex:1; }
+    .hint { font-size:11px; color:var(--text-dim); margin-top:4px; }
+    .err-msg { color: var(--bad); font-size:12px; margin-top:6px; min-height:14px; }
+    .modal-actions { display:flex; gap:10px; margin-top:8px; }
+
+    /* Controls tester */
+    .axis-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .axis-row .ax-i { width:130px; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+    .axis-row .ax-i.mapped { color: var(--neon-lime); }
+    .axis-row .ax-track { position:relative; flex:1; height:10px; background:var(--bg-0); border-radius:5px; }
+    .axis-row .ax-track i { position:absolute; top:-3px; width:10px; height:16px; border-radius:3px; background:var(--neon-cyan); box-shadow:0 0 8px var(--neon-cyan); transform:translateX(-50%); }
+    .axis-row .ax-v { width:46px; text-align:right; font-variant-numeric:tabular-nums; font-size:12px; }
+    .btns-live { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 14px; }
+    .btn-pill { min-width:26px; text-align:center; padding:4px 6px; font-size:11px; border-radius:6px; background:var(--bg-2); border:1px solid var(--stroke); color:var(--text-dim); }
+    .btn-pill.on { background:var(--neon-lime); color:#04060a; border-color:var(--neon-lime); font-weight:700; }
+    .ctrl-status { font-size:12px; color:var(--text-dim); margin-bottom:12px; padding:8px 10px; background:var(--bg-2); border-radius:8px; border:1px solid var(--stroke); }
   </style>
 </head>
 <body>
@@ -245,7 +313,8 @@
         <h2>Racing Wheel</h2>
         <div class="kv"><span>Device</span><b id="padName">NONE</b></div>
         <div class="kv"><span>Poll Rate</span><b id="padHz">— Hz</b></div>
-        <div class="kv"><span>Steer Axis 0</span><b id="padAxis">0.00</b></div>
+        <div class="kv"><span>Steer Axis</span><b id="padAxis">0.00</b></div>
+        <button id="btnTestControls" style="margin-top:10px;">🎮 Test &amp; Map Controls</button>
         <p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
           Press any button on your wheel / pad to bind. Polling runs at 50&nbsp;Hz.
         </p>
@@ -270,7 +339,7 @@
 
     <!-- ============ STAGE: FPV + telemetry + car grid ============ -->
     <section class="stage">
-      <div class="viewport">
+      <div class="viewport" id="viewport">
         <video id="fpv" autoplay playsinline muted></video>
         <div class="no-signal" id="noSignal">◍ NO SIGNAL ◍</div>
         <div class="hud">
@@ -292,6 +361,7 @@
           </div>
           <div class="reticle"></div>
         </div>
+        <button class="vp-btn" id="btnFullscreen" title="Toggle fullscreen">⛶ Fullscreen</button>
       </div>
 
       <div class="bars">
@@ -308,7 +378,13 @@
       </div>
 
       <section class="panel">
-        <h2>Select Your Vehicle</h2>
+        <div class="panel-head">
+          <h2>Select Your Vehicle</h2>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-sm" id="btnExport" title="Copy roster JSON to clipboard">⇩ Export</button>
+            <button class="btn-sm primary" id="btnAddCar">＋ Register Car</button>
+          </div>
+        </div>
         <div class="grid" id="carGrid"></div>
       </section>
     </section>
@@ -316,42 +392,117 @@
 
   <footer>ESP-NOW MESH · WEB SERIAL 115200 · &lt;20MS TARGET LATENCY · STATIC BUILD</footer>
 
+  <!-- ============ MODAL: Car editor / register ============ -->
+  <div class="overlay" id="carOverlay">
+    <div class="modal">
+      <h3 id="carModalTitle">Register Car</h3>
+      <input type="hidden" id="carEditId" />
+      <div class="field">
+        <label for="carName">Vehicle Name</label>
+        <input type="text" id="carName" maxlength="28" placeholder="e.g. RALLY CAR" />
+        <div class="hint">The last word is auto-highlighted in the card accent color.</div>
+      </div>
+      <div class="field-row">
+        <div class="field" style="flex:0 0 110px;">
+          <label for="carSprite">Icon</label>
+          <input type="text" id="carSprite" maxlength="4" placeholder="🏎️" />
+        </div>
+        <div class="field">
+          <label for="carMac">MAC Address</label>
+          <input type="text" id="carMac" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field" style="flex:0 0 72px;">
+          <label for="carAccent">Accent</label>
+          <input type="color" id="carAccent" value="#00e5ff" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="carSpd">Speed</label><input type="number" id="carSpd" min="0" max="100" value="70" /></div>
+        <div class="field"><label for="carGrip">Grip</label><input type="number" id="carGrip" min="0" max="100" value="70" /></div>
+        <div class="field"><label for="carAcc">Accel</label><input type="number" id="carAcc" min="0" max="100" value="70" /></div>
+      </div>
+      <div class="err-msg" id="carErr"></div>
+      <div class="modal-actions">
+        <button class="primary" id="carSave">Save Vehicle</button>
+        <button id="carCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: Controls tester / mapper ============ -->
+  <div class="overlay" id="ctrlOverlay">
+    <div class="modal">
+      <h3>Test &amp; Map Controls</h3>
+      <div class="ctrl-status" id="ctrlStatus">No controller detected — press a button on your wheel/pad.</div>
+
+      <div class="field"><label>Live Axes</label><div id="axesLive"></div></div>
+      <div class="field"><label>Buttons</label><div class="btns-live" id="btnsLive"></div></div>
+
+      <div class="field-row">
+        <div class="field"><label for="mapSteer">Steering axis</label><select id="mapSteer"></select></div>
+        <div class="field"><label for="mapThrottle">Throttle axis</label><select id="mapThrottle"></select></div>
+        <div class="field"><label for="mapBrake">Brake axis</label><select id="mapBrake"></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="mapDeadzone">Throttle dead-zone (0–255)</label>
+          <input type="number" id="mapDeadzone" min="0" max="60" value="5" />
+        </div>
+        <div class="field">
+          <label for="mapRest">Throttle pedal rests at</label>
+          <select id="mapRest">
+            <option value="neg">-1.0 (typical wheel pedal)</option>
+            <option value="zero">0.0 (trigger / joystick)</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
+      <div class="modal-actions">
+        <button class="primary" id="ctrlSave">Save Mapping</button>
+        <button id="ctrlClose">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script>
   /* =================================================================
      RC SIM RACING ARCADE LOBBY — application logic (pure JS)
      - Web Gamepad API  : polled @ 50 Hz
      - Web Serial API   : 115200 baud, lean newline-terminated packets
      - Web MediaDevices : 640x480 @ 60fps FPV capture
+     - Roster + control mapping persisted in localStorage
      ================================================================= */
   'use strict';
 
-  /* ---------------- Vehicle roster ----------------
-     Each car maps to a physical receiver by MAC address. */
-  const VEHICLES = [
-    { id: 'rally',  name: 'RALLY <span>CAR</span>',  sprite: '🏎️', mac: 'AA:BB:CC:11:22:33',
-      accent: '#00e5ff', glow: 'rgba(0,229,255,0.35)',  stats: { spd: 78, grip: 90, acc: 70 } },
-    { id: 'buggy',  name: 'DUNE <span>BUGGY</span>', sprite: '🚙', mac: 'AA:BB:CC:44:55:66',
-      accent: '#b6ff00', glow: 'rgba(182,255,0,0.30)',  stats: { spd: 65, grip: 72, acc: 95 } },
-    { id: 'drift',  name: 'DRIFT <span>KING</span>', sprite: '🚗', mac: 'AA:BB:CC:77:88:99',
-      accent: '#ff2e97', glow: 'rgba(255,46,151,0.32)', stats: { spd: 88, grip: 55, acc: 82 } },
+  /* ---------------- Default vehicle roster ----------------
+     Each car maps to a physical receiver by MAC address.
+     Names are plain text; the card highlights the last word. */
+  const DEFAULT_VEHICLES = [
+    { id: 'rally', name: 'RALLY CAR',  sprite: '🏎️', mac: 'AA:BB:CC:11:22:33', accent: '#00e5ff', stats: { spd: 78, grip: 90, acc: 70 } },
+    { id: 'buggy', name: 'DUNE BUGGY', sprite: '🚙', mac: 'AA:BB:CC:44:55:66', accent: '#b6ff00', stats: { spd: 65, grip: 72, acc: 95 } },
+    { id: 'drift', name: 'DRIFT KING', sprite: '🚗', mac: 'AA:BB:CC:77:88:99', accent: '#ff2e97', stats: { spd: 88, grip: 55, acc: 82 } },
   ];
 
+  const DEFAULT_CONTROLS = { steer: 0, throttle: 1, brake: 2, deadzone: 5, rest: 'neg' };
+
+  const LS_VEHICLES = 'rcarcade.vehicles.v1';
+  const LS_CONTROLS = 'rcarcade.controls.v1';
+
   /* ---------------- Tuning constants ---------------- */
-  const POLL_HZ      = 50;                 // gamepad + TX loop frequency
-  const POLL_MS      = 1000 / POLL_HZ;     // 20 ms period
-  const DEADZONE     = 5;                  // throttle cutoff (>5 of 0–255) to kill motor creep
-  const AXIS_STEER   = 0;                  // wheel steering axis
-  const AXIS_THROTTLE= 1;                  // primary pedal axis (gas)
-  const AXIS_BRAKE   = 2;                  // brake pedal axis (optional / reverse)
+  const POLL_HZ = 50;
+  const POLL_MS = 1000 / POLL_HZ;
 
   /* ---------------- State ---------------- */
   const state = {
     port: null, writer: null, keepReading: false, reader: null,
     padIndex: null,
-    selected: null,
+    vehicles: [],
+    controls: { ...DEFAULT_CONTROLS },
+    selectedId: null,
     lastSteer: 90, lastThrottle: 0,
     lastSent: '', txCount: 0, txWindowStart: performance.now(),
     encoder: new TextEncoder(),
+    testerTimer: null,
   };
 
   /* ---------------- DOM helpers ---------------- */
@@ -367,26 +518,58 @@
     while (el.childElementCount > 200) el.removeChild(el.firstChild);
   }
   function setChip(id, live) { $(id).classList.toggle('live', !!live); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+  function hexToRgba(hex, a) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return `rgba(0,229,255,${a})`;
+    const n = parseInt(m[1], 16);
+    return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+  }
+  const selected = () => state.vehicles.find((v) => v.id === state.selectedId) || null;
 
   /* =================================================================
-     CALIBRATION MATH — the single source of truth for scaling
+     PERSISTENCE
      ================================================================= */
-
-  // Steering: axis [-1.0, 1.0] -> servo degrees [0, 180], center = 90
-  function axisToServo(axis) {
-    const clamped = Math.max(-1, Math.min(1, axis));
-    return Math.round((clamped + 1) * 90); // -1->0, 0->90, 1->180
+  function loadRoster() {
+    try {
+      const raw = localStorage.getItem(LS_VEHICLES);
+      state.vehicles = raw ? JSON.parse(raw) : structuredClone(DEFAULT_VEHICLES);
+    } catch (_) { state.vehicles = structuredClone(DEFAULT_VEHICLES); }
+    if (!Array.isArray(state.vehicles) || !state.vehicles.length) state.vehicles = structuredClone(DEFAULT_VEHICLES);
   }
+  function saveRoster() { try { localStorage.setItem(LS_VEHICLES, JSON.stringify(state.vehicles)); } catch (_) {} }
+  function loadControls() {
+    try {
+      const raw = localStorage.getItem(LS_CONTROLS);
+      state.controls = raw ? { ...DEFAULT_CONTROLS, ...JSON.parse(raw) } : { ...DEFAULT_CONTROLS };
+    } catch (_) { state.controls = { ...DEFAULT_CONTROLS }; }
+  }
+  function saveControls() { try { localStorage.setItem(LS_CONTROLS, JSON.stringify(state.controls)); } catch (_) {} }
 
-  // Throttle pedal: raw axis -> 0..255 with a dead-zone cutoff (>5) to stop creep.
-  // Many wheel pedals rest at -1.0 (released) and travel to +1.0 (floored);
-  // we normalize that to a 0..1 press amount first.
-  function pedalToPwm(axisRaw, restNegative = true) {
-    let press = restNegative ? (axisRaw + 1) / 2 : axisRaw; // -> 0..1
+  /* =================================================================
+     CALIBRATION MATH — single source of truth for scaling
+     ================================================================= */
+  // Steering: axis [-1,1] -> servo degrees [0,180], center 90
+  function axisToServo(axis) {
+    const c = Math.max(-1, Math.min(1, axis));
+    return Math.round((c + 1) * 90);
+  }
+  // Throttle pedal -> 0..255 with dead-zone cutoff to stop motor creep.
+  function pedalToPwm(axisRaw, rest, deadzone) {
+    let press = rest === 'neg' ? (axisRaw + 1) / 2 : axisRaw;
     press = Math.max(0, Math.min(1, press));
     let pwm = Math.round(press * 255);
-    if (pwm <= DEADZONE) pwm = 0; // dead-zone cutoff prevents motor creep
+    if (pwm <= deadzone) pwm = 0;
     return pwm;
+  }
+
+  /* =================================================================
+     MAC NORMALIZATION / VALIDATION
+     ================================================================= */
+  function normalizeMac(input) {
+    const cleaned = String(input).trim().toUpperCase().replace(/[^0-9A-F]/g, '');
+    if (cleaned.length !== 12) return null;
+    return cleaned.match(/.{2}/g).join(':');
   }
 
   /* =================================================================
@@ -400,14 +583,13 @@
       state.port = port;
       state.writer = port.writable.getWriter();
       state.keepReading = true;
-      readLoop(port); // non-blocking drain of inbound telemetry
+      readLoop(port);
       $('serialState').textContent = 'CONNECTED';
       $('btnSerialConnect').disabled = true;
       $('btnSerialDisconnect').disabled = false;
       setChip('chipSerial', true);
       log('Transmitter link open @ 115200 baud.');
-      // Re-assert current target on (re)connect
-      if (state.selected) sendCarSwap(state.selected);
+      if (selected()) sendCarSwap(selected());
     } catch (err) {
       log('Serial connect failed: ' + err.message, 'err');
     }
@@ -431,7 +613,6 @@
     }
   }
 
-  // Drain inbound bytes so the underlying stream never stalls; surface telemetry lines.
   async function readLoop(port) {
     const decoder = new TextDecoderStream();
     const closed = port.readable.pipeTo(decoder.writable).catch(() => {});
@@ -460,7 +641,6 @@
     }
   }
 
-  // Lean write; silently no-ops when disconnected so the 50Hz loop never throws.
   async function serialWrite(str) {
     if (!state.writer) return;
     try {
@@ -472,7 +652,6 @@
     }
   }
 
-  // Handle physical USB yank without crashing the app.
   if ('serial' in navigator) {
     navigator.serial.addEventListener('disconnect', (e) => {
       if (state.port && e.target === state.port) {
@@ -484,13 +663,11 @@
 
   /* ---------------- Packet builders ---------------- */
   function sendCarSwap(vehicle) {
-    // "CAR,AA,BB,CC,DD,EE,FF\n"
     const octets = vehicle.mac.split(':').join(',');
     serialWrite(`CAR,${octets}\n`);
     log('TX ▸ CAR swap → ' + vehicle.mac, 'tx');
   }
   function sendDrive(servoDeg, motorPwm) {
-    // "DRIVE,180,255\n" — only transmit on change to keep the buffer lean
     const packet = `DRIVE,${servoDeg},${motorPwm}\n`;
     if (packet === state.lastSent) return;
     state.lastSent = packet;
@@ -500,41 +677,133 @@
   /* =================================================================
      VEHICLE GRID
      ================================================================= */
-  function buildGrid() {
+  function renderName(name, accent) {
+    const words = String(name).trim().split(/\s+/);
+    if (words.length === 1) return esc(words[0]);
+    const last = words.pop();
+    return esc(words.join(' ')) + ' <span>' + esc(last) + '</span>';
+  }
+
+  function renderGrid() {
     const grid = $('carGrid');
-    VEHICLES.forEach((v) => {
+    grid.innerHTML = '';
+    state.vehicles.forEach((v) => {
       const el = document.createElement('div');
-      el.className = 'car';
+      el.className = 'car' + (v.id === state.selectedId ? ' active' : '');
       el.style.setProperty('--accent', v.accent);
-      el.style.setProperty('--glow', v.glow);
+      el.style.setProperty('--glow', hexToRgba(v.accent, 0.33));
       el.innerHTML = `
-        <div class="badge">Selected</div>
-        <div class="sprite">${v.sprite}</div>
-        <div class="name">${v.name}</div>
-        <div class="mac">${v.mac}</div>
+        <div class="active-tag">◉ Active</div>
+        <div class="car-actions">
+          <button class="icon-btn" data-act="edit" title="Edit vehicle">✎</button>
+          <button class="icon-btn" data-act="del" title="Delete vehicle">🗑</button>
+        </div>
+        <div class="sprite">${esc(v.sprite || '🚗')}</div>
+        <div class="name">${renderName(v.name, v.accent)}</div>
+        <div class="mac">${esc(v.mac)}</div>
         <div class="stats">
           ${['spd','grip','acc'].map((k) => `
             <div class="stat">
               <div class="n">${k}</div>
-              <div class="meter"><i style="width:${v.stats[k]}%"></i></div>
+              <div class="meter"><i style="width:${Math.max(0,Math.min(100, v.stats?.[k] ?? 0))}%"></i></div>
             </div>`).join('')}
         </div>`;
-      el.addEventListener('click', () => selectVehicle(v, el));
+      el.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'edit') { e.stopPropagation(); openCarModal(v); return; }
+        if (act === 'del')  { e.stopPropagation(); deleteVehicle(v); return; }
+        selectVehicle(v.id);
+      });
       grid.appendChild(el);
     });
+
+    // "add" card
+    const add = document.createElement('div');
+    add.className = 'car add-card';
+    add.innerHTML = '<div class="plus">＋</div><div>Register Car</div>';
+    add.addEventListener('click', () => openCarModal(null));
+    grid.appendChild(add);
   }
 
-  function selectVehicle(vehicle, el) {
-    document.querySelectorAll('.car').forEach((c) => c.classList.remove('active'));
-    el.classList.add('active');
-    state.selected = vehicle;
-    $('hudTarget').textContent = vehicle.mac.slice(-8);
-    sendCarSwap(vehicle);
-    log('Vehicle armed: ' + vehicle.name.replace(/<[^>]+>/g, ''));
+  function selectVehicle(id) {
+    const v = state.vehicles.find((x) => x.id === id);
+    if (!v) return;
+    state.selectedId = id;
+    $('hudTarget').textContent = v.mac.slice(-8);
+    renderGrid();
+    sendCarSwap(v);
+    log('Vehicle armed: ' + v.name);
+  }
+
+  function deleteVehicle(v) {
+    if (!confirm(`Delete "${v.name}" (${v.mac}) from the lobby?`)) return;
+    state.vehicles = state.vehicles.filter((x) => x.id !== v.id);
+    if (state.selectedId === v.id) { state.selectedId = null; $('hudTarget').textContent = '—'; }
+    saveRoster();
+    renderGrid();
+    log('Vehicle removed: ' + v.name);
   }
 
   /* =================================================================
-     WEB GAMEPAD — bind + poll @ 50 Hz, fold into the TX loop
+     CAR MODAL — register / edit
+     ================================================================= */
+  function openCarModal(vehicle) {
+    const isEdit = !!vehicle;
+    $('carModalTitle').textContent = isEdit ? 'Edit Vehicle' : 'Register Car';
+    $('carEditId').value = isEdit ? vehicle.id : '';
+    $('carName').value   = isEdit ? vehicle.name : '';
+    $('carSprite').value = isEdit ? (vehicle.sprite || '') : '🏎️';
+    $('carMac').value    = isEdit ? vehicle.mac : '';
+    $('carAccent').value = isEdit ? vehicle.accent : '#00e5ff';
+    $('carSpd').value    = isEdit ? (vehicle.stats?.spd ?? 70) : 70;
+    $('carGrip').value   = isEdit ? (vehicle.stats?.grip ?? 70) : 70;
+    $('carAcc').value    = isEdit ? (vehicle.stats?.acc ?? 70) : 70;
+    $('carErr').textContent = '';
+    $('carOverlay').classList.add('open');
+    $('carName').focus();
+  }
+  function closeCarModal() { $('carOverlay').classList.remove('open'); }
+
+  function saveCar() {
+    const id = $('carEditId').value;
+    const name = $('carName').value.trim();
+    const sprite = $('carSprite').value.trim() || '🚗';
+    const mac = normalizeMac($('carMac').value);
+    const accent = $('carAccent').value;
+    const clampStat = (x) => Math.max(0, Math.min(100, parseInt(x, 10) || 0));
+    const stats = { spd: clampStat($('carSpd').value), grip: clampStat($('carGrip').value), acc: clampStat($('carAcc').value) };
+
+    if (!name) { $('carErr').textContent = 'Vehicle name is required.'; return; }
+    if (!mac)  { $('carErr').textContent = 'Invalid MAC — expected 6 hex bytes, e.g. AA:BB:CC:DD:EE:FF.'; return; }
+
+    // Reject duplicate MAC (unless it's the same record we're editing).
+    const dup = state.vehicles.find((v) => v.mac === mac && v.id !== id);
+    if (dup) { $('carErr').textContent = `That MAC is already assigned to "${dup.name}".`; return; }
+
+    if (id) {
+      const v = state.vehicles.find((x) => x.id === id);
+      if (v) { Object.assign(v, { name, sprite, mac, accent, stats }); }
+      if (state.selectedId === id) $('hudTarget').textContent = mac.slice(-8);
+      log('Vehicle updated: ' + name + ' → ' + mac);
+    } else {
+      const newId = 'car_' + mac.replace(/:/g, '').toLowerCase();
+      state.vehicles.push({ id: newId, name, sprite, mac, accent, stats });
+      log('Vehicle registered: ' + name + ' → ' + mac);
+    }
+    saveRoster();
+    renderGrid();
+    closeCarModal();
+  }
+
+  async function exportRoster() {
+    const json = JSON.stringify(state.vehicles, null, 2);
+    try { await navigator.clipboard.writeText(json); log('Roster JSON copied to clipboard (' + state.vehicles.length + ' cars).'); }
+    catch (_) { log('Clipboard blocked — roster JSON dumped to console.'); }
+    console.log('RC ARCADE ROSTER:\n' + json);
+  }
+
+  /* =================================================================
+     WEB GAMEPAD — bind + poll @ 50 Hz
      ================================================================= */
   window.addEventListener('gamepadconnected', (e) => {
     state.padIndex = e.gamepad.index;
@@ -553,66 +822,153 @@
 
   function readGamepad() {
     if (state.padIndex === null) return null;
-    const pads = navigator.getGamepads();
-    const pad = pads[state.padIndex];
+    const pad = navigator.getGamepads()[state.padIndex];
     if (!pad) return null;
-    const steerAxis = pad.axes[AXIS_STEER] ?? 0;
-    // Prefer a dedicated throttle axis; fall back to trigger button if absent.
-    let throttleAxis = pad.axes[AXIS_THROTTLE];
+    const c = state.controls;
+    const steerAxis = pad.axes[c.steer] ?? 0;
+    let throttleAxis = pad.axes[c.throttle];
     if (throttleAxis === undefined && pad.buttons[7]) throttleAxis = pad.buttons[7].value * 2 - 1;
-    return { steerAxis, throttleAxis: throttleAxis ?? -1 };
+    return { steerAxis, throttleAxis: throttleAxis ?? (c.rest === 'neg' ? -1 : 0) };
   }
 
   /* =================================================================
-     50 Hz CONTROL LOOP — poll input, calibrate, transmit, paint HUD
+     50 Hz CONTROL LOOP
      ================================================================= */
   function controlTick() {
     const input = readGamepad();
     let servo = 90, pwm = 0;
-
     if (input) {
       servo = axisToServo(input.steerAxis);
-      pwm   = pedalToPwm(input.throttleAxis, true);
+      pwm   = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
-
     state.lastSteer = servo;
     state.lastThrottle = pwm;
-
-    if (state.selected) sendDrive(servo, pwm);
-
+    if (selected()) sendDrive(servo, pwm);
     paintHud(servo, pwm);
   }
 
   function paintHud(servo, pwm) {
-    // Numeric HUD
     $('hudSteer').textContent = servo + '°';
     $('hudThrottle').textContent = pwm;
     $('steerVal').textContent = servo;
     $('throttleVal').textContent = pwm;
-
-    // Steering bar: draw outward from center (90)
     const pct = (servo / 180) * 100;
     const steerBar = $('steerBar');
     if (servo >= 90) { steerBar.style.left = '50%'; steerBar.style.width = (pct - 50) + '%'; }
     else             { steerBar.style.left = pct + '%'; steerBar.style.width = (50 - pct) + '%'; }
-
-    // Throttle bar
     $('throttleBar').style.width = ((pwm / 255) * 100) + '%';
   }
 
-  // TX-rate telemetry — refresh once per second
   function rateTick() {
     const now = performance.now();
     const dt = (now - state.txWindowStart) / 1000;
     const hz = dt > 0 ? Math.round(state.txCount / dt) : 0;
     $('hudRate').textContent = hz + ' Hz';
     $('padHz').textContent = state.padIndex !== null ? POLL_HZ + ' Hz' : '— Hz';
-    const box = $('hudLinkBox');
-    box.className = 'corner tr ' + (state.writer ? 'telem-ok' : 'telem-bad');
+    $('hudLinkBox').className = 'corner tr ' + (state.writer ? 'telem-ok' : 'telem-bad');
     state.txCount = 0;
     state.txWindowStart = now;
   }
+
+  /* =================================================================
+     CONTROLS TESTER / MAPPER
+     ================================================================= */
+  function openCtrlModal() {
+    const c = state.controls;
+    $('mapDeadzone').value = c.deadzone;
+    $('mapRest').value = c.rest;
+    $('ctrlOverlay').classList.add('open');
+    state.testerTimer = setInterval(updateTester, 50);
+    updateTester();
+  }
+  function closeCtrlModal() {
+    $('ctrlOverlay').classList.remove('open');
+    if (state.testerTimer) { clearInterval(state.testerTimer); state.testerTimer = null; }
+  }
+
+  function ensureAxisSelects(count) {
+    ['mapSteer','mapThrottle','mapBrake'].forEach((selId) => {
+      const sel = $(selId);
+      if (sel.options.length === count && count > 0) return;
+      const key = selId === 'mapSteer' ? 'steer' : selId === 'mapThrottle' ? 'throttle' : 'brake';
+      sel.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.textContent = 'Axis ' + i;
+        sel.appendChild(o);
+      }
+      sel.value = state.controls[key];
+    });
+  }
+
+  function updateTester() {
+    const pad = state.padIndex !== null ? navigator.getGamepads()[state.padIndex] : null;
+    if (!pad) {
+      $('ctrlStatus').textContent = 'No controller detected — press a button on your wheel/pad.';
+      $('axesLive').innerHTML = '';
+      $('btnsLive').innerHTML = '';
+      return;
+    }
+    $('ctrlStatus').textContent = pad.id;
+    ensureAxisSelects(pad.axes.length);
+
+    const steerSel = parseInt($('mapSteer').value, 10);
+    const thrSel = parseInt($('mapThrottle').value, 10);
+    const brkSel = parseInt($('mapBrake').value, 10);
+
+    $('axesLive').innerHTML = pad.axes.map((v, i) => {
+      const pct = ((v + 1) / 2) * 100;
+      let tag = '';
+      if (i === steerSel) tag = ' · STEER';
+      else if (i === thrSel) tag = ' · THROTTLE';
+      else if (i === brkSel) tag = ' · BRAKE';
+      return `<div class="axis-row">
+        <span class="ax-i${tag ? ' mapped' : ''}">Axis ${i}${tag}</span>
+        <div class="ax-track"><i style="left:${pct}%"></i></div>
+        <span class="ax-v">${v.toFixed(2)}</span>
+      </div>`;
+    }).join('');
+
+    $('btnsLive').innerHTML = pad.buttons.map((b, i) =>
+      `<span class="btn-pill ${b.pressed ? 'on' : ''}">${i}</span>`).join('');
+
+    // Live preview of the resulting servo/motor with the currently selected mapping.
+    const steerAxis = pad.axes[steerSel] ?? 0;
+    const thrAxis = pad.axes[thrSel] ?? (($('mapRest').value === 'neg') ? -1 : 0);
+    const dz = parseInt($('mapDeadzone').value, 10) || 0;
+    const servo = axisToServo(steerAxis);
+    const motor = pedalToPwm(thrAxis, $('mapRest').value, dz);
+    $('mapPreview').textContent = `SERVO ${servo}° · MOTOR ${motor}`;
+  }
+
+  function saveControlMapping() {
+    state.controls = {
+      steer: parseInt($('mapSteer').value, 10) || 0,
+      throttle: parseInt($('mapThrottle').value, 10) || 0,
+      brake: parseInt($('mapBrake').value, 10) || 0,
+      deadzone: Math.max(0, Math.min(60, parseInt($('mapDeadzone').value, 10) || 0)),
+      rest: $('mapRest').value,
+    };
+    saveControls();
+    log(`Control map saved: steer=Axis${state.controls.steer}, throttle=Axis${state.controls.throttle}, deadzone=${state.controls.deadzone}.`);
+    closeCtrlModal();
+  }
+
+  /* =================================================================
+     FULLSCREEN
+     ================================================================= */
+  function toggleFullscreen() {
+    const vp = $('viewport');
+    if (!document.fullscreenElement) {
+      (vp.requestFullscreen?.() || vp.webkitRequestFullscreen?.())?.catch?.((e) => log('Fullscreen blocked: ' + e.message, 'err'));
+    } else {
+      document.exitFullscreen?.();
+    }
+  }
+  document.addEventListener('fullscreenchange', () => {
+    $('btnFullscreen').textContent = document.fullscreenElement ? '⛶ Exit Fullscreen' : '⛶ Fullscreen';
+  });
 
   /* =================================================================
      WEB MEDIADEVICES — 640x480 @ 60fps FPV frame grabber
@@ -629,7 +985,7 @@
         opt.textContent = d.label || ('Camera ' + (sel.length));
         sel.appendChild(opt);
       });
-    } catch (_) { /* labels require permission; ignore pre-grant */ }
+    } catch (_) {}
   }
 
   async function startVideo() {
@@ -653,7 +1009,7 @@
       const track = stream.getVideoTracks()[0];
       const s = track.getSettings();
       log(`FPV feed live: ${s.width}×${s.height} @ ${Math.round(s.frameRate || 0)}fps`);
-      await enumerateVideo(); // labels now available
+      await enumerateVideo();
       track.addEventListener('ended', () => {
         setChip('chipVideo', false);
         $('noSignal').style.display = 'flex';
@@ -668,13 +1024,37 @@
      BOOT
      ================================================================= */
   function boot() {
-    buildGrid();
+    loadRoster();
+    loadControls();
+    renderGrid();
     enumerateVideo();
+
+    // Connection controls
     $('btnSerialConnect').addEventListener('click', serialConnect);
     $('btnSerialDisconnect').addEventListener('click', serialDisconnect);
     $('btnVideo').addEventListener('click', startVideo);
+    $('btnFullscreen').addEventListener('click', toggleFullscreen);
 
-    // Drive the control loop at 50 Hz and the rate readout at 1 Hz.
+    // Roster controls
+    $('btnAddCar').addEventListener('click', () => openCarModal(null));
+    $('btnExport').addEventListener('click', exportRoster);
+    $('carSave').addEventListener('click', saveCar);
+    $('carCancel').addEventListener('click', closeCarModal);
+    $('carOverlay').addEventListener('click', (e) => { if (e.target === $('carOverlay')) closeCarModal(); });
+
+    // Controls tester
+    $('btnTestControls').addEventListener('click', openCtrlModal);
+    $('ctrlSave').addEventListener('click', saveControlMapping);
+    $('ctrlClose').addEventListener('click', closeCtrlModal);
+    $('ctrlOverlay').addEventListener('click', (e) => { if (e.target === $('ctrlOverlay')) closeCtrlModal(); });
+    ['mapSteer','mapThrottle','mapBrake','mapDeadzone','mapRest'].forEach((id) =>
+      $(id).addEventListener('change', updateTester));
+
+    // Global ESC closes any open modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); }
+    });
+
     setInterval(controlTick, POLL_MS);
     setInterval(rateTick, 1000);
 
