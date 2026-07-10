@@ -200,15 +200,9 @@ git push
 | **GND** | Servo GND **and** ESC GND | Common ground (required) |
 | **5 V / VIN** | *From BEC/ESC, not from USB* | Power for the ESP32 |
 
-```
-                ESP32 (car)
-              ┌───────────┐
-   Servo  ◀── │ GPIO 18   │
-   ESC    ◀── │ GPIO 19   │
-   GND    ─── │ GND ──────┼─── common ground (servo + ESC + battery)
-   5V     ─── │ VIN       │ ◀── BEC / ESC 5V rail
-              └───────────┘
-```
+<p align="center">
+  <img src="docs/wiring.svg" alt="RC car receiver wiring: ESP32 GPIO18 to steering servo, GPIO19 to ESC/motor, common ground bus, BEC power" width="720">
+</p>
 
 **Failsafe behavior:** if the car stops receiving frames for **500 ms**, the receiver centers the steering (90°) and cuts the throttle to neutral automatically. This is defined by `FAILSAFE_MS` in the receiver firmware.
 

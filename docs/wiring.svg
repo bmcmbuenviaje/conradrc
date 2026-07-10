@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 600" font-family="Segoe UI, Rajdhani, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f1a"/>
+      <stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123024"/>
+      <stop offset="1" stop-color="#0a1f18"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00e5ff"/>
+      <stop offset="1" stop-color="#ff2e97"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#e8f0ff"/>
+    </marker>
+    <style>
+      .lbl   { fill:#e8f0ff; font-size:15px; }
+      .lbl-s { fill:#7f8db0; font-size:12px; letter-spacing:1px; }
+      .neon  { fill:#00e5ff; font-size:12px; letter-spacing:2px; text-transform:uppercase; }
+      .pin   { fill:#04060a; font-size:12px; font-weight:700; }
+      .title { fill:#e8f0ff; font-size:22px; font-weight:800; letter-spacing:3px; }
+      .accent{ fill:#00e5ff; }
+      .mag   { fill:#ff2e97; }
+      .wire  { fill:none; stroke-width:4; }
+    </style>
+  </defs>
+
+  <!-- background -->
+  <rect x="0" y="0" width="920" height="600" rx="18" fill="url(#bg)" stroke="rgba(0,229,255,0.25)"/>
+
+  <!-- title -->
+  <text x="34" y="46" class="title">RC CAR <tspan class="accent">RECEIVER</tspan> WIRING</text>
+  <text x="34" y="70" class="lbl-s">ESP32 · STEERING SERVO (D18) · ESC / DRIVE MOTOR (D19) · COMMON GROUND</text>
+
+  <!-- ============ ESP32 board ============ -->
+  <g>
+    <rect x="320" y="200" width="280" height="230" rx="12" fill="url(#board)" stroke="#1e7a5a" stroke-width="2"/>
+    <rect x="356" y="188" width="208" height="16" rx="3" fill="#2a2f3a"/>
+    <text x="460" y="230" text-anchor="middle" class="lbl" font-weight="800" font-size="20">ESP32</text>
+    <text x="460" y="250" text-anchor="middle" class="lbl-s">DEV MODULE (CAR SIDE)</text>
+    <text x="460" y="410" text-anchor="middle" class="lbl-s">USB (flash only)</text>
+
+    <!-- right-side pins -->
+    <g>
+      <!-- D18 -->
+      <rect x="600" y="270" width="14" height="14" fill="#00e5ff"/>
+      <text x="592" y="281" text-anchor="end" class="lbl">GPIO 18 · D18</text>
+      <!-- D19 -->
+      <rect x="600" y="320" width="14" height="14" fill="#b6ff00"/>
+      <text x="592" y="331" text-anchor="end" class="lbl">GPIO 19 · D19</text>
+      <!-- GND -->
+      <rect x="600" y="370" width="14" height="14" fill="#e8f0ff"/>
+      <text x="592" y="381" text-anchor="end" class="lbl">GND</text>
+    </g>
+
+    <!-- left-side pins -->
+    <g>
+      <!-- VIN -->
+      <rect x="306" y="270" width="14" height="14" fill="#ff2e97"/>
+      <text x="328" y="281" class="lbl">VIN / 5V</text>
+      <!-- GND -->
+      <rect x="306" y="370" width="14" height="14" fill="#e8f0ff"/>
+      <text x="328" y="381" class="lbl">GND</text>
+    </g>
+  </g>
+
+  <!-- ============ Steering servo ============ -->
+  <g>
+    <rect x="720" y="120" width="160" height="90" rx="10" fill="#12203a" stroke="#00e5ff" stroke-width="2"/>
+    <text x="800" y="152" text-anchor="middle" class="neon">Steering</text>
+    <text x="800" y="172" text-anchor="middle" class="lbl">Servo</text>
+    <text x="800" y="194" text-anchor="middle" class="lbl-s">0–180° · 90° center</text>
+  </g>
+  <!-- signal wire D18 -> servo -->
+  <path class="wire" stroke="#00e5ff" d="M614,277 H670 V165 H720" marker-end="url(#arrow)"/>
+  <text x="686" y="205" class="neon" font-size="11">SIGNAL</text>
+
+  <!-- ============ ESC + motor ============ -->
+  <g>
+    <rect x="720" y="360" width="160" height="90" rx="10" fill="#1a2412" stroke="#b6ff00" stroke-width="2"/>
+    <text x="800" y="392" text-anchor="middle" class="neon" fill="#b6ff00">ESC</text>
+    <text x="800" y="412" text-anchor="middle" class="lbl">+ Drive Motor</text>
+    <text x="800" y="434" text-anchor="middle" class="lbl-s">1000–2000 µs pulse</text>
+  </g>
+  <!-- signal wire D19 -> ESC -->
+  <path class="wire" stroke="#b6ff00" d="M614,327 H670 V405 H720" marker-end="url(#arrow)"/>
+  <text x="686" y="352" class="neon" fill="#b6ff00" font-size="11">SIGNAL</text>
+
+  <!-- ============ Battery / BEC ============ -->
+  <g>
+    <rect x="40" y="250" width="150" height="100" rx="10" fill="#241226" stroke="#ff2e97" stroke-width="2"/>
+    <text x="115" y="284" text-anchor="middle" class="neon" fill="#ff2e97">Battery</text>
+    <text x="115" y="304" text-anchor="middle" class="lbl">/ BEC 5V</text>
+    <text x="115" y="326" text-anchor="middle" class="lbl-s">powers ESP+servo+ESC</text>
+  </g>
+  <!-- power wire BEC -> VIN -->
+  <path class="wire" stroke="#ff2e97" d="M190,277 H306" marker-end="url(#arrow)"/>
+  <text x="212" y="270" class="mag" font-size="11">+5V</text>
+
+  <!-- ============ Common ground bus ============ -->
+  <g>
+    <line x1="115" y1="500" x2="805" y2="500" stroke="#e8f0ff" stroke-width="4"/>
+    <text x="460" y="530" text-anchor="middle" class="lbl-s">COMMON GROUND BUS — ESP32 · SERVO · ESC · BATTERY ALL SHARE GND</text>
+    <!-- drops to the bus -->
+    <path class="wire" stroke="#e8f0ff" d="M115,350 V500"/>
+    <path class="wire" stroke="#e8f0ff" d="M307,377 V500"/>
+    <path class="wire" stroke="#e8f0ff" d="M800,450 V500"/>
+    <path class="wire" stroke="#e8f0ff" d="M800,210 V235 H700 V500" opacity="0.6"/>
+    <!-- ground nodes -->
+    <circle cx="115" cy="500" r="5" fill="#e8f0ff"/>
+    <circle cx="307" cy="500" r="5" fill="#e8f0ff"/>
+    <circle cx="700" cy="500" r="5" fill="#e8f0ff"/>
+    <circle cx="800" cy="500" r="5" fill="#e8f0ff"/>
+  </g>
+
+  <!-- warning -->
+  <text x="34" y="576" class="lbl-s" fill="#ffb020">⚠ Do NOT power the servo/ESC from the ESP32 3.3V rail. Use the BEC and share a common ground.</text>
+</svg>
