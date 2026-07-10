@@ -242,6 +242,19 @@ Sitting in the sidebar, the **Drivetrain** panel shapes the throttle before it's
   - **Manual** — a 6-speed box where each gear caps top speed to a share of the power limit: **gear 1 = 10%, 2 = 20%, 3 = 40%, 4 = 60%, 5 = 80%, 6 = 100%**. You must shift up to go faster. Shift with the on-screen **▲ Shift Up / ▼ Shift Down** buttons or bind controller buttons in **Test & Map Controls**. (These caps live in the `GEAR_CAPS` array in `index.html` if you want a different curve.)
 - **◄ Reverse** — toggles direction; the motor value goes negative and the ESC drives the car backward. Bindable to a controller button too.
 
+#### Racing HUD: gear indicator + RPM shift lights (manual)
+
+When **Manual** is engaged, the FPV overlay turns into a sim-racing dash:
+
+- A large **gear number** (green, or `R` in amber for reverse) sits center-top of the video.
+- Above it, an **RPM shift-light strip** fills **green → yellow → red** as your simulated revs climb toward the current gear's ceiling. When it hits the **redline it flashes red** — your cue to **shift up**. (Because each gear tops out at the same relative RPM, you redline in every gear at full throttle, just like a real car; upshifting drops the revs.)
+
+#### Simulated engine braking (manual)
+
+Manual mode runs a lightweight momentum model, so the car has virtual "speed" that doesn't vanish the instant you lift off. When you **release the throttle or downshift while rolling**, the app commands a proportional **reverse (brake) pulse** to the ESC — i.e. simulated **engine braking**. It's **stronger in lower gears**, so banging down a gear to slow into a corner works like the real thing, and it fades out smoothly as the car stops (no roll-back). Automatic mode stays instant/arcade with no momentum or engine braking. Tuning lives in the `SIM` constants at the top of the script (`accel`, `coast`, `engineBrake`, `brakeCmd`).
+
+> On the car side, "engine braking" is realized as a brief reverse command — on most ESCs that acts as a brake while moving forward. On an ESC configured for *instant* reverse it may nudge the car backward at very low speed; lower `SIM.brakeCmd` if you see that.
+
 Power limit, transmission mode, and the shift/reverse button bindings are saved to localStorage; the current gear and reverse toggle reset on reload (safe defaults).
 
 **Hot-swapping:** you can unplug/replug the USB transmitter or switch cars at any time. The app handles disconnects cleanly and re-asserts the current target when you reconnect.
@@ -336,6 +349,8 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 | **Car is too fast / twitchy** | Lower **Max Power** in the Drivetrain panel, or switch to **Manual** and stay in a low gear. |
 | **Reverse does nothing** | The ESC isn't in a reverse-capable mode — enable reverse in the ESC's own programming. Confirm the app is sending a negative motor value (HUD shows `R`). |
 | **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Caps are 10/20/40/60/80/100% of Max Power for gears 1–6. |
+| **Shift lights / gear not showing** | They only appear in **Manual** (Automatic shows `D`). The strip hides in reverse. |
+| **Engine braking nudges the car backward** | Your ESC does instant reverse — lower `SIM.brakeCmd` in `index.html`, or set the ESC to forward/brake mode. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
 | **Steering/throttle on the wrong axis, or reversed** | Open **🎮 Test & Map Controls**, wiggle each control to find its axis index, reassign, and Save. |
 | **Registered cars vanished / defaults came back** | The roster lives in that browser's localStorage. A different browser, profile, or cleared site data starts from `DEFAULT_VEHICLES`. Use **⇩ Export** to move a roster between machines. |
