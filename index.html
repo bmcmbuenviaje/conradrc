@@ -369,8 +369,10 @@
             <button id="btnShiftDown">▼ Shift Down</button>
             <button id="btnShiftUp">▲ Shift Up</button>
           </div>
-          <p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
-            Each gear caps top speed. Bind shift up/down to controller buttons in <b>Test &amp; Map Controls</b>.
+          <div class="slider-head" style="margin-top:14px;"><span>Engine Braking</span><b id="engBrakeVal">100%</b></div>
+          <input type="range" id="engBrakeSlider" min="0" max="150" step="10" value="100" />
+          <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5">
+            How hard the motor brakes when you lift off / downshift (0 = coast only). Each gear caps top speed. Bind shift up/down to controller buttons in <b>Test &amp; Map Controls</b>.
           </p>
         </div>
       </section>
@@ -580,6 +582,7 @@
     steer: 0, throttle: 1, brake: 2, deadzone: 5, rest: 'neg',
     powerLimit: 100,          // % cap on top speed (10..100)
     transmission: 'auto',     // 'auto' | 'manual'
+    engBrake: 100,            // engine-braking strength (0..150 %), manual only
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
   };
   // Per-gear top-speed cap, as % of Max Power. Index 0 = gear 1 ... index 5 = gear 6.
@@ -707,16 +710,17 @@
     const gearFrac = GEAR_CAPS[state.gear - 1] / 100;         // this gear's speed ceiling
     const demand = pedal * powerFrac * gearFrac;              // steady-state speed asked for
 
+    const ebStrength = state.controls.engBrake / 100;              // user tuning 0..1.5
+    const ebFactor = (GEAR_COUNT - state.gear + 1) / GEAR_COUNT;   // gear1=1.0 ... gear6≈0.17
     let braking = false;
     if (demand >= state.vspeed) {
       // Accelerate toward demand (geared: acceleration is rate-limited).
       state.vspeed = Math.min(demand, state.vspeed + SIM.accel * dt);
     } else {
-      // Decelerate: coasting + engine braking (stronger in lower gears).
-      const ebFactor = (GEAR_COUNT - state.gear + 1) / GEAR_COUNT; // gear1=1.0 ... gear6≈0.17
-      const decel = SIM.coast + SIM.engineBrake * ebFactor;
+      // Decelerate: coasting + engine braking (stronger in lower gears, user-scaled).
+      const decel = SIM.coast + SIM.engineBrake * ebFactor * ebStrength;
       state.vspeed = Math.max(demand, state.vspeed - decel * dt);
-      braking = state.vspeed > SIM.idleCut && demand < state.vspeed - 0.001;
+      braking = ebStrength > 0 && state.vspeed > SIM.idleCut && demand < state.vspeed - 0.001;
     }
     state.vspeed = Math.max(0, Math.min(1, state.vspeed));
 
@@ -726,8 +730,7 @@
     let motorFrac;
     if (braking) {
       // Realize engine braking as a reverse pulse; fade out near stop.
-      const ebFactor = (GEAR_COUNT - state.gear + 1) / GEAR_COUNT;
-      let brake = SIM.brakeCmd * ebFactor * Math.min(1, state.vspeed / 0.15);
+      const brake = SIM.brakeCmd * ebFactor * ebStrength * Math.min(1, state.vspeed / 0.15);
       motorFrac = -brake;
     } else {
       motorFrac = state.vspeed; // drive to sustain the simulated speed
@@ -1201,6 +1204,11 @@
     saveControls();
     updateDrivetrainUI();
   }
+  function setEngineBrake(pct) {
+    state.controls.engBrake = Math.max(0, Math.min(150, pct | 0));
+    saveControls();
+    updateDrivetrainUI();
+  }
   function updateDrivetrainUI() {
     $('powerVal').textContent = state.controls.powerLimit + '%';
     $('powerSlider').value = state.controls.powerLimit;
@@ -1210,6 +1218,8 @@
       b.classList.toggle('on', b.dataset.trans === state.controls.transmission));
     $('gearVal').textContent = state.gear;
     $('gearCap').textContent = GEAR_CAPS[state.gear - 1] + '%';
+    $('engBrakeVal').textContent = state.controls.engBrake + '%';
+    $('engBrakeSlider').value = state.controls.engBrake;
     const rev = $('btnReverse');
     rev.classList.toggle('on', state.reverse);
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
@@ -1414,6 +1424,7 @@
 
     // Drivetrain controls
     $('powerSlider').addEventListener('input', (e) => setPowerLimit(parseInt(e.target.value, 10)));
+    $('engBrakeSlider').addEventListener('input', (e) => setEngineBrake(parseInt(e.target.value, 10)));
     document.querySelectorAll('#transSeg button').forEach((b) =>
       b.addEventListener('click', () => setTransmission(b.dataset.trans)));
     $('btnReverse').addEventListener('click', toggleReverse);

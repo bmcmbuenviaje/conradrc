@@ -251,7 +251,9 @@ When **Manual** is engaged, the FPV overlay turns into a sim-racing dash:
 
 #### Simulated engine braking (manual)
 
-Manual mode runs a lightweight momentum model, so the car has virtual "speed" that doesn't vanish the instant you lift off. When you **release the throttle or downshift while rolling**, the app commands a proportional **reverse (brake) pulse** to the ESC — i.e. simulated **engine braking**. It's **stronger in lower gears**, so banging down a gear to slow into a corner works like the real thing, and it fades out smoothly as the car stops (no roll-back). Automatic mode stays instant/arcade with no momentum or engine braking. Tuning lives in the `SIM` constants at the top of the script (`accel`, `coast`, `engineBrake`, `brakeCmd`).
+Manual mode runs a lightweight momentum model, so the car has virtual "speed" that doesn't vanish the instant you lift off. When you **release the throttle or downshift while rolling**, the app commands a proportional **reverse (brake) pulse** to the ESC — i.e. simulated **engine braking**. It's **stronger in lower gears**, so banging down a gear to slow into a corner works like the real thing, and it fades out smoothly as the car stops (no roll-back). Automatic mode stays instant/arcade with no momentum or engine braking.
+
+Dial the feel in with the **Engine Braking** slider in the Drivetrain panel (0–150%, saved per browser): **0 = coast only** (freewheel, no motor braking), 100 = default, 150 = aggressive. The rest of the model's feel (`accel`, `coast`, `engineBrake`, `brakeCmd`) lives in the `SIM` constants at the top of the script.
 
 > On the car side, "engine braking" is realized as a brief reverse command — on most ESCs that acts as a brake while moving forward. On an ESC configured for *instant* reverse it may nudge the car backward at very low speed; lower `SIM.brakeCmd` if you see that.
 
