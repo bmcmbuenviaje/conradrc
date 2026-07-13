@@ -28,6 +28,12 @@
 
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_system.h>
+
+/* ---------- Optional payload encryption (must match master) ---------- */
+static const bool     ENABLE_CRYPTO = false;
+static const uint8_t  PMK[16] = { 'R','C','A','R','C','A','D','E','_','P','M','K','_','_','_','1' };
+static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K','_','_','_','1' };
 
 /* ---------- Drive motor (H-bridge A) ---------- */
 static const int AIN1 = 25;
@@ -54,6 +60,7 @@ static const int      MOTOR_CREEP = 8;     // |motor| <= this -> brake/stop
 static const int      STEER_DEAD  = 12;    // degrees around center -> no steer
 static const int      STEER_DUTY  = 255;   // bang-bang steering is full-on
 static const uint32_t FAILSAFE_MS = 500;
+static const uint32_t MIN_RX_INTERVAL_MS = 4; // rate-limit
 
 /* ---------- Wire formats (must match the transmitter) ---------- */
 typedef struct __attribute__((packed)) {
@@ -65,6 +72,8 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
   uint16_t vbat_mv;
   int8_t   rssi;
+  uint16_t failsafes;
+  uint8_t  flags;
 } TelemetryFrame;
 
 /* ---------- State ---------- */
@@ -73,6 +82,9 @@ static volatile int16_t  rxMotor   = 0;
 static volatile uint32_t lastRxMs  = 0;
 static volatile bool     haveFrame = false;
 static volatile int8_t   lastRssi  = 0;
+static volatile uint16_t failsafeCt = 0;
+static volatile uint8_t  statusFlags = 0;
+static volatile uint32_t lastAcceptMs = 0;
 
 static uint8_t  masterMac[6] = {0};
 static bool     haveMaster   = false;
@@ -109,11 +121,15 @@ static void applyFailsafe() {
 /* ---------- ESP-NOW ---------- */
 static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
   if (len != sizeof(DriveFrame)) return;
+  const uint32_t now = millis();
+  if (now - lastAcceptMs < MIN_RX_INTERVAL_MS) return; // rate-limit
+  lastAcceptMs = now;
+
   DriveFrame frame;
   memcpy(&frame, data, sizeof(frame));
   rxServo  = constrain(frame.servo, 0, 180);
   rxMotor  = constrain(frame.motor, -255, 255);
-  lastRxMs = millis();
+  lastRxMs = now;
   haveFrame = true;
   if (info->rx_ctrl) lastRssi = info->rx_ctrl->rssi;
 
@@ -121,7 +137,9 @@ static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
     memcpy(masterMac, info->src_addr, 6);
     esp_now_peer_info_t peer = {};
     memcpy(peer.peer_addr, masterMac, 6);
-    peer.channel = 0; peer.encrypt = false; peer.ifidx = WIFI_IF_STA;
+    peer.channel = 0; peer.ifidx = WIFI_IF_STA;
+    peer.encrypt = ENABLE_CRYPTO;
+    if (ENABLE_CRYPTO) memcpy(peer.lmk, LMK, 16);
     if (esp_now_add_peer(&peer) == ESP_OK) haveMaster = true;
   }
 }
@@ -133,7 +151,9 @@ static uint16_t readBatteryMv() {
 }
 static void sendTelemetry() {
   if (!haveMaster) return;
-  TelemetryFrame t; t.vbat_mv = readBatteryMv(); t.rssi = lastRssi;
+  TelemetryFrame t;
+  t.vbat_mv = readBatteryMv(); t.rssi = lastRssi;
+  t.failsafes = failsafeCt; t.flags = statusFlags;
   esp_now_send(masterMac, (uint8_t *) &t, sizeof(t));
 }
 
@@ -149,9 +169,13 @@ void setup() {
   ledcAttach(PWMB, PWM_FREQ, PWM_RES);
   applyFailsafe();
 
+  esp_reset_reason_t rr = esp_reset_reason();
+  if (rr == ESP_RST_BROWNOUT) statusFlags |= 0x01;
+
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   if (esp_now_init() != ESP_OK) { Serial.println("ERR,ESPNOW_INIT"); ESP.restart(); }
+  if (ENABLE_CRYPTO) esp_now_set_pmk(PMK);
   esp_now_register_recv_cb(onDataRecv);
 
   Serial.print("READY,RECEIVER_TOY,");
@@ -165,6 +189,7 @@ void loop() {
   } else if (haveFrame) {
     applyFailsafe();
     haveFrame = false;
+    failsafeCt++;
     Serial.println("FAILSAFE,LINK_LOST");
   }
   if (haveMaster && (now - lastTelemMs) >= 200) { lastTelemMs = now; sendTelemetry(); }

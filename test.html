@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>RC Arcade — Smoke Tests</title>
+<style>
+  body { font: 14px/1.5 Segoe UI, system-ui, sans-serif; margin: 24px; background:#05060a; color:#e8f0ff; }
+  h1 { margin-bottom: 8px; color:#00e5ff; }
+  .sub { color:#7f8db0; margin-bottom: 18px; }
+  .test { padding:6px 10px; margin-bottom:4px; border-left:3px solid #333; font-family: Consolas, monospace; font-size:13px; }
+  .test.pass { border-left-color:#29ff9b; color:#c9ffe6; }
+  .test.fail { border-left-color:#ff4d5e; color:#ffc1c8; background: rgba(255,77,94,0.08); }
+  .test.fail .why { color:#ff8a94; font-size:12px; }
+  #summary { margin: 16px 0 20px; font-size: 18px; font-weight: 700; }
+  a { color:#00e5ff; }
+</style>
+</head>
+<body>
+<h1>RC Arcade — Smoke Tests</h1>
+<div class="sub">Loads <a href="index.html">index.html</a> in a hidden iframe, then exercises calibration math, drivetrain sim, safety gates, telemetry parsing, roster import, and per-car tune apply. In-browser only — no controller / serial needed.</div>
+<div id="summary">Running…</div>
+<div id="results"></div>
+
+<iframe id="app" src="index.html" style="width:1px;height:1px;position:absolute;left:-9999px;top:-9999px;" onload="run()"></iframe>
+
+<script>
+'use strict';
+const R = document.getElementById('results');
+let pass = 0, fail = 0;
+
+function assert(name, ok, why) {
+  const el = document.createElement('div');
+  el.className = 'test ' + (ok ? 'pass' : 'fail');
+  el.innerHTML = (ok ? '✓ ' : '✗ ') + name + (ok ? '' : ' <span class="why">— ' + (why || '') + '</span>');
+  R.appendChild(el);
+  if (ok) pass++; else fail++;
+}
+function eq(a, b) { return a === b || (Math.abs(a - b) < 1e-6); }
+function near(a, b, tol) { return Math.abs(a - b) <= tol; }
+
+async function run() {
+  const w = document.getElementById('app').contentWindow;
+  // Wait for the app to expose its internals for the harness.
+  for (let i = 0; i < 40 && !w.__rc; i++) await new Promise(r => setTimeout(r, 50));
+  if (!w.__rc) { document.getElementById('summary').textContent = 'App did not initialize (window.__rc missing)'; return; }
+  const s = w.__rc.state;
+  const ctx = { w, s, c: s.controls };
+
+  // ---------- Calibration math ----------
+  assert('axisToServo(0) = 90', eq(w.axisToServo(0), 90));
+  assert('axisToServo(-1) = 0', eq(w.axisToServo(-1), 0));
+  assert('axisToServo(1) = 180', eq(w.axisToServo(1), 180));
+  assert('pedalToPwm(-1, "neg", 5) = 0', eq(w.pedalToPwm(-1, 'neg', 5), 0));
+  assert('pedalToPwm(0, "neg", 5) mid ~128', near(w.pedalToPwm(0, 'neg', 5), 128, 2));
+  assert('pedalToPwm(1, "neg", 5) = 255', eq(w.pedalToPwm(1, 'neg', 5), 255));
+
+  // Steering pipeline
+  ctx.c.trim = 0; ctx.c.epa = 100; ctx.c.expo = 0; ctx.c.invertSteer = false;
+  assert('computeSteer center = 90', eq(w.computeSteer(0), 90));
+  assert('computeSteer right (EPA 100) = 180', eq(w.computeSteer(1), 180));
+  ctx.c.epa = 50; assert('computeSteer right (EPA 50) = 135', eq(w.computeSteer(1), 135));
+  ctx.c.epa = 100; ctx.c.trim = 10; assert('computeSteer center + trim 10 = 100', eq(w.computeSteer(0), 100));
+  ctx.c.trim = 0; ctx.c.invertSteer = true; assert('computeSteer inverted right = 0', eq(w.computeSteer(1), 0));
+  ctx.c.invertSteer = false;
+
+  // ---------- Drivetrain: power cap + gears + reverse ----------
+  ctx.c.powerLimit = 100; ctx.c.transmission = 'auto';
+  ctx.s.reverse = false;
+  assert('scaleMotor auto full = 255', eq(w.scaleMotor(255), 255));
+  ctx.c.powerLimit = 50;
+  assert('scaleMotor 50% = 128', eq(w.scaleMotor(255), 128));
+  ctx.s.reverse = true;
+  assert('scaleMotor reverse = -128', eq(w.scaleMotor(255), -128));
+  ctx.s.reverse = false;
+  ctx.c.powerLimit = 100; ctx.c.transmission = 'manual';
+  ctx.s.gear = 1; assert('scaleMotor gear1 = 26 (10% of 255)', eq(w.scaleMotor(255), 26));
+  ctx.s.gear = 6; assert('scaleMotor gear6 = 255 (100% of 255)', eq(w.scaleMotor(255), 255));
+
+  // Per-car gear caps override
+  ctx.s.selectedId = ctx.s.vehicles[0].id;
+  ctx.s.vehicles[0].tune = { gearCaps: [50,60,70,80,90,100] };
+  ctx.s.gear = 1;
+  assert('per-car gearCaps override applies', eq(w.scaleMotor(255), 128));
+  delete ctx.s.vehicles[0].tune;
+  ctx.s.selectedId = null;
+
+  // Shift clamping
+  ctx.s.gear = 6; w.shiftGear(+1); assert('shift past gear 6 clamps at 6', eq(ctx.s.gear, 6));
+  ctx.s.gear = 1; w.shiftGear(-1); assert('shift below gear 1 clamps at 1', eq(ctx.s.gear, 1));
+
+  // ---------- Safety ----------
+  ctx.c.transmission = 'auto'; ctx.s.armed = false; ctx.s.estop = false;
+  w.setArmed(true); assert('setArmed(true) arms when throttle at rest', ctx.s.armed);
+  w.eStop(); assert('eStop() sets estop + disarms', ctx.s.estop && !ctx.s.armed);
+  w.setArmed(true); assert('re-arm clears estop', !ctx.s.estop && ctx.s.armed);
+  w.safetyHold('test'); assert('safetyHold() disarms', !ctx.s.armed);
+
+  // ---------- Telemetry parsing ----------
+  ctx.s.lastDriveAt = ctx.w.performance.now() - 12;
+  w.handleSerialLine('ACK,5,OK');
+  assert('ACK OK increments ackOk', ctx.s.ackOk >= 1);
+  assert('ACK OK computed latency ~12ms', near(ctx.s.latencyMs, 12, 2));
+  w.handleSerialLine('ACK,6,FAIL');
+  assert('ACK FAIL increments ackFail', ctx.s.ackFail >= 1);
+  w.handleSerialLine('TELEM,7400,-58,3,1');
+  assert('TELEM vbat parsed 7.4V', eq(ctx.s.vbat, 7.4));
+  assert('TELEM rssi parsed -58', eq(ctx.s.rssi, -58));
+  assert('TELEM failsafes parsed 3', eq(ctx.s.failsafes, 3));
+  assert('TELEM flags parsed (brownout bit)', (ctx.s.telemFlags & 1) === 1);
+  w.handleSerialLine('CLAIM,AA:BB:CC:DD:EE:FF,11:22:33:44:55:66');
+  assert('CLAIM adds to claims map', !!ctx.s.claims['11:22:33:44:55:66']);
+
+  // ---------- Roster: parseRosterJson ----------
+  const good = JSON.stringify([{ name:'TEST', mac:'aa-bb-cc-dd-ee-ff', tune:{ powerLimit: 55, gearCaps:[5,10,20,40,70,100] } }]);
+  const parsed = w.parseRosterJson(good);
+  assert('parseRosterJson normalizes MAC + preserves tune', parsed.cars && parsed.cars[0].mac === 'AA:BB:CC:DD:EE:FF' && parsed.cars[0].tune?.powerLimit === 55);
+  const bad = w.parseRosterJson('{"not":"array"}');
+  assert('parseRosterJson rejects non-array', !!bad.error);
+  const badMac = w.parseRosterJson('[{"name":"X","mac":"zzz"}]');
+  assert('parseRosterJson rejects invalid MAC', !!badMac.error);
+
+  // ---------- Per-car tune apply ----------
+  const v = ctx.s.vehicles[0];
+  v.tune = { powerLimit:40, transmission:'manual', engBrake:120, trim:5, epa:80, expo:-25, deadzone:8, invertSteer:true };
+  ctx.c.powerLimit = 100; ctx.c.transmission = 'auto'; ctx.c.trim = 0; ctx.c.invertSteer = false;
+  w.applyVehicleTune(v);
+  assert('applyVehicleTune sets powerLimit', ctx.c.powerLimit === 40);
+  assert('applyVehicleTune sets transmission', ctx.c.transmission === 'manual');
+  assert('applyVehicleTune sets engBrake', ctx.c.engBrake === 120);
+  assert('applyVehicleTune sets trim', ctx.c.trim === 5);
+  assert('applyVehicleTune sets epa', ctx.c.epa === 80);
+  assert('applyVehicleTune sets expo', ctx.c.expo === -25);
+  assert('applyVehicleTune sets deadzone', ctx.c.deadzone === 8);
+  assert('applyVehicleTune sets invertSteer', ctx.c.invertSteer === true);
+  delete v.tune;
+
+  // ---------- Simulated engine braking ----------
+  ctx.c.transmission = 'manual'; ctx.c.engBrake = 100; ctx.c.powerLimit = 100;
+  ctx.s.gear = 3; ctx.s.vspeed = 0.6; ctx.s.rpm = 0; ctx.s.armed = true; ctx.s.estop = false;
+  const brakePulse = w.simManualDrive(0);
+  assert('simManualDrive on lift-off returns negative motor (brake)', brakePulse < 0);
+  // Reset
+  ctx.s.gear = 1; ctx.s.vspeed = 0; ctx.s.rpm = 0; ctx.s.armed = false;
+
+  // ---------- MAC normalization edge cases ----------
+  assert('normalizeMac dashes', w.normalizeMac('aa-bb-cc-dd-ee-ff') === 'AA:BB:CC:DD:EE:FF');
+  assert('normalizeMac plain hex', w.normalizeMac('aabbccddeeff') === 'AA:BB:CC:DD:EE:FF');
+  assert('normalizeMac short = null', w.normalizeMac('aabbcc') === null);
+  assert('normalizeMac non-hex = null', w.normalizeMac('zzzz') === null);
+
+  // Cleanup: wipe localStorage the iframe touched during the test.
+  try { w.localStorage.clear(); } catch (_) {}
+
+  const summary = document.getElementById('summary');
+  summary.textContent = `${pass} passed · ${fail} failed`;
+  summary.style.color = fail ? '#ff4d5e' : '#29ff9b';
+  document.title = (fail ? '✗ ' : '✓ ') + summary.textContent;
+}
+</script>
+</body>
+</html>

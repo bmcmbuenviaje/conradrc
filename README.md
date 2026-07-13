@@ -303,12 +303,22 @@ With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← 
 ### 🎚️ Extras
 
 - **Steering Tuning panel** — trim (center), endpoint/travel (EPA), expo, and invert. All live and saved.
-- **Per-car tuning** — the Edit dialog has optional Max Power / Transmission / Steer Trim / Invert saved *with* the car and applied when you select it.
+- **Per-car tuning (full profile)** — the Edit dialog saves per-car **Max Power, Transmission, Engine Braking, Steer Trim, EPA, Expo, Dead-zone, Invert Steer, and optional gear-cap curve**. Applied automatically when you select the car. See the [roster JSON schema](#roster-json-schema--import---export).
+- **🛰 Fleet Dashboard** — one screen showing every registered car with **live battery, RSSI, latency, and ACTIVE / IN USE / IDLE** status. Great for the pit.
+- **⏺ Record FPV** — MediaRecorder-based `.webm` capture of the FPV feed. Toggle on/off from the FPV panel.
+- **Live multi-camera switching** — pick a different capture source from the dropdown mid-run; the feed swaps without stopping the app (useful for chase-cams).
+- **Gamepad haptics** — the wheel/pad rumbles on **E-STOP**, **redline**, and **low battery** (Chrome-only; needs a compatible pad).
 - **🔊 Engine Sound** — WebAudio synth whose pitch tracks RPM/throttle (toggle in Drivetrain).
 - **🛠 Calibrate ESC** — a guided helper that sends raw full-forward / neutral / full-reverse pulses for ESC throttle-range calibration.
 - **Race Timer** — Start/Lap/Reset with best-lap tracking.
-- **Multi-cabinet presence** — if another cabinet (same browser origin) selects the same car, an **⚠ IN USE** badge appears. *Note: this is best-effort over `BroadcastChannel` and only coordinates cabinets sharing an origin/profile — it does not synchronize across separate machines.*
+- **Multi-cabinet presence (real, cross-machine)** — each master ESP32 broadcasts its current claim over ESP-NOW every second; other masters relay foreign claims to their browser as `CLAIM,<masterMac>,<carMac>`, and the grid shows **⚠ IN USE** on cars driven by another cabinet. (There's also a `BroadcastChannel` fallback for same-origin browser presence.)
+- **Optional ESP-NOW encryption** — set `ENABLE_CRYPTO=true` + matching PMK/LMK on the master and every car to authenticate + encrypt the DriveFrames. Presence broadcasts stay unencrypted by design.
 - **Install / offline** — it's a PWA; install it for kiosk use and it runs offline (control needs the USB transmitter, of course).
+- **In-browser smoke tests** — open [test.html](test.html) to run ~40 assertions across the calibration/drivetrain/safety/telemetry paths in a hidden iframe. Green means "no regressions."
+
+### 🧪 Before your first drive
+
+Follow the **[bench-test / commissioning checklist](BENCH_TEST.md)** — 10 sections, wheels-up first, ends with a slow first lap at 30 % power. Take 15 minutes; save a crashed car.
 
 ### ⚙️ Drivetrain (power, reverse, gearbox)
 
@@ -368,8 +378,14 @@ All packets are lean, newline-terminated ASCII at **115200 baud**.
 | `READY,MASTER,<mac>` | Boot banner. |
 | `OK,CAR,<mac>` | Peer swap accepted. |
 | `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. |
-| `TELEM,<millivolts>,<rssi>` | Car telemetry relayed to the browser: **battery** and **RSSI**. Drives the HUD battery/low-battery warning. |
+| `TELEM,<mv>,<rssi>,<failsafes>,<flags>` | Car telemetry relayed to the browser: **battery mV**, **RSSI**, **failsafe count** since car boot, and status flags (bit0 = brownout suspected). Drives the HUD + Fleet Dashboard. |
+| `CLAIM,<masterMac>,<carMac>` | Another master on the same 2.4 GHz channel is currently driving `carMac`. The grid shows ⚠ IN USE. `carMac = 00:00…` means idle/released. |
 | `ERR,<code>` | Parse/target error (`CAR_LEN`, `NO_TARGET`, `OVERFLOW`, …). |
+
+### Browser → Master (additional)
+| Packet | Meaning |
+|--------|---------|
+| `RELEASE\n` | Browser deselected the active car — master broadcasts idle claim so other cabinets can see the release. |
 
 ### Over the air (Master → Car, binary)
 A packed `DriveFrame` struct — identical on both firmware files:
@@ -387,9 +403,19 @@ The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full re
 The car learns the master's MAC from the first frame it receives, then sends back a packed `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
 ```c
 typedef struct __attribute__((packed)) {
-  uint16_t vbat_mv; // battery millivolts (0 if unmeasured)
-  int8_t   rssi;    // dBm the car heard from the master
+  uint16_t vbat_mv;   // battery millivolts (0 if unmeasured)
+  int8_t   rssi;      // dBm the car heard from the master
+  uint16_t failsafes; // number of link-lost failsafes since boot
+  uint8_t  flags;     // bit0: brownout suspected on last reset; other bits reserved
 } TelemetryFrame;
+```
+
+Masters also broadcast a `PresenceFrame` on `ff:ff:ff:ff:ff:ff` once a second (unencrypted so any master hears):
+```c
+typedef struct __attribute__((packed)) {
+  char    tag[4]; // "CLM\0"
+  uint8_t car[6]; // MAC of the car this master is driving (all zero = idle)
+} PresenceFrame;
 ```
 Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` (GPIO 34) with the right `BATTERY_DIVIDER` ratio. RSSI works with no extra wiring.
 
@@ -463,17 +489,54 @@ conradrc/
 ├── manifest.webmanifest                        # PWA manifest (install / offline)
 ├── sw.js                                       # Service worker (offline cache)
 ├── icon.svg                                    # App icon
+├── test.html                                   # In-browser smoke tests
+├── BENCH_TEST.md                               # Commissioning checklist (print + take to the cabinet)
 ├── README.md                                   # This file
 ├── docs/
-│   └── wiring.svg                              # Car receiver wiring diagram (embedded above)
+│   ├── wiring.svg                              # Hobby-grade wiring diagram
+│   └── wiring_toygrade.svg                     # Toy-grade H-bridge wiring diagram
 └── electronics/
     ├── master_transmitter/
-    │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge + telemetry relay
+    │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge + telemetry + presence
     ├── car_receiver/
     │   └── car_receiver.ino                    # Hobby-grade: ESP-NOW → servo (D18) + ESC (D19) + battery/RSSI
     └── car_receiver_toygrade/
         └── car_receiver_toygrade.ino           # Toy-grade: ESP-NOW → dual H-bridge (PWM drive + bang-bang steer)
 ```
+
+### Roster JSON schema (⇧ Import / ⇩ Export)
+
+The Import dialog accepts an array of vehicle objects. **Only `name` and `mac` are required** — everything else has defaults.
+
+```jsonc
+[
+  {
+    "name": "RALLY CAR",
+    "mac": "AA:BB:CC:11:22:33",   // colons, dashes, or plain hex; normalized on import
+    "sprite": "🏎️",              // optional emoji shown on the card
+    "accent": "#00e5ff",         // optional hex color, defaults to cyan
+    "stats": { "spd": 78, "grip": 90, "acc": 70 },   // 0..100 each, cosmetic
+    "tune": {                    // OPTIONAL — applied when this car is selected
+      "powerLimit": 60,          // 10..100, max-power cap %
+      "transmission": "manual",  // "auto" | "manual"
+      "engBrake":  120,          // 0..150, engine-brake strength %
+      "trim":       -3,          // -30..30, steering trim degrees (center offset)
+      "epa":        90,          // 50..100, steering endpoint %
+      "expo":      -20,          // -100..100, steering expo
+      "deadzone":    8,          // 0..60, throttle dead-zone (of 0..255)
+      "invertSteer": false,      // flip steering direction
+      "gearCaps":  [8, 18, 35, 55, 78, 100]   // OPTIONAL: 6 numbers, 0..100
+                                              // per-gear top-speed cap; omit to use global default 10/20/40/60/80/100
+    }
+  }
+]
+```
+
+Field-by-field notes:
+
+- **Deleting a field is fine** — every tune value falls back to what's currently in the app.
+- **`gearCaps` is per-car and independent of the global curve.** Use it to give a crawler short low gears, a rally car taller gears, etc. All 6 values required if present.
+- **Rosters exported from the app** always include `tune`, `stats`, and normalized MAC. You can hand-edit and re-import.
 
 ---
 
