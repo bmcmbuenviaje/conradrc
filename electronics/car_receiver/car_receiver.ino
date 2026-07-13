@@ -26,6 +26,7 @@
 #include <esp_now.h>
 #include <ESP32Servo.h>
 #include <esp_system.h>
+#include <esp_mac.h>
 
 /* ---------- Optional payload encryption (must match master) ---------- */
 static const bool     ENABLE_CRYPTO = false;
@@ -162,8 +163,16 @@ void setup() {
   if (ENABLE_CRYPTO) esp_now_set_pmk(PMK);
   esp_now_register_recv_cb(onDataRecv);
 
+  // Read the MAC from eFuse directly. WiFi.macAddress() sometimes returns
+  // 00:00:… on ESP32 core 3.x if the WiFi driver hasn't cached the eFuse
+  // read by the time we print. esp_read_mac() is deterministic.
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   Serial.print("READY,RECEIVER,");
-  Serial.println(WiFi.macAddress());
+  Serial.println(macStr);
 }
 
 void loop() {

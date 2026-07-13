@@ -28,6 +28,7 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <esp_mac.h>
 
 /* ---------- Optional payload encryption ----------
    Anyone within 2.4 GHz range who knows a car's MAC could otherwise send
@@ -251,8 +252,11 @@ void setup() {
   // Broadcast peer for presence beacons (always unencrypted so any master hears).
   addPeerFor(BROADCAST, false);
 
+  uint8_t myMac[6];
+  esp_read_mac(myMac, ESP_MAC_WIFI_STA);
   Serial.print("READY,MASTER,");
-  Serial.println(WiFi.macAddress());
+  printMac(myMac);
+  Serial.println();
 }
 
 void loop() {
