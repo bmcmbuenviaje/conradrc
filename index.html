@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RC SIM ARCADE // LOBBY</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#05060a" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <style>
     /* ============================================================
        RC SIM RACING ARCADE LOBBY — static, dependency-free styles
@@ -149,8 +152,8 @@
     .hud .corner { position: absolute; padding: 10px 14px; font-size: 12px; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
     .hud .tl { top: 0; left: 0; }
     .hud .tr { top: 0; right: 0; text-align: right; }
-    .hud .bl { bottom: 0; left: 0; }
-    .hud .br { bottom: 0; right: 0; text-align: right; }
+    .hud .bl { bottom: 52px; left: 0; }
+    .hud .br { bottom: 52px; right: 0; text-align: right; }
     .hud .label { color: var(--neon-cyan); text-transform: uppercase; letter-spacing: 2px; font-size: 10px; }
     .hud .val { font-size: 20px; font-weight: 700; }
     .hud .reticle {
@@ -315,6 +318,44 @@
     .btn-pill { min-width:26px; text-align:center; padding:4px 6px; font-size:11px; border-radius:6px; background:var(--bg-2); border:1px solid var(--stroke); color:var(--text-dim); }
     .btn-pill.on { background:var(--neon-lime); color:#04060a; border-color:var(--neon-lime); font-weight:700; }
     .ctrl-status { font-size:12px; color:var(--text-dim); margin-bottom:12px; padding:8px 10px; background:var(--bg-2); border-radius:8px; border:1px solid var(--stroke); }
+
+    /* ---------- Safety ---------- */
+    .safety-panel { border-color: rgba(255,176,32,0.35); }
+    .safety-badge { font-size:10px; font-weight:800; letter-spacing:1.5px; padding:4px 10px; border-radius:999px; }
+    .safety-badge.idle  { background:var(--bg-2); color:var(--text-dim); border:1px solid var(--stroke); }
+    .safety-badge.armed { background:rgba(41,255,155,0.15); color:var(--ok); border:1px solid var(--ok); }
+    .safety-badge.estop { background:rgba(255,77,94,0.2); color:var(--bad); border:1px solid var(--bad); animation:pulse 0.8s infinite; }
+    @keyframes pulse { 50% { opacity:0.4; } }
+    button.arm { border-color: var(--ok); color: var(--ok); }
+    button.arm.armed { background: linear-gradient(180deg, rgba(41,255,155,0.25), rgba(41,255,155,0.08)); }
+    button.estop { border-color: var(--bad); color: var(--bad); font-weight:800; }
+    button.estop:hover:not(:disabled) { box-shadow:0 0 18px rgba(255,77,94,0.5); }
+    kbd { background:var(--bg-2); border:1px solid var(--stroke); border-radius:4px; padding:1px 5px; font-size:10px; }
+    /* big STOP + snapshot on the viewport */
+    .vp-stop {
+      position:absolute; bottom:12px; left:12px; width:auto; padding:10px 16px; z-index:6;
+      background:rgba(255,77,94,0.9); color:#fff; border-color:var(--bad); font-weight:800;
+    }
+    .vp-stop:hover { box-shadow:0 0 22px rgba(255,77,94,0.7); }
+    .vp-snap { left:auto; right:12px; transform:none; bottom:12px; padding:8px 12px; }
+
+    /* ---------- Lap timer ---------- */
+    .lap-current { font-size:34px; font-weight:800; text-align:center; color:var(--neon-cyan); font-variant-numeric:tabular-nums; letter-spacing:1px; }
+    .lap-list { margin-top:12px; max-height:140px; overflow-y:auto; }
+    .lap-row { display:flex; justify-content:space-between; font-size:12px; padding:5px 8px; border-radius:6px; }
+    .lap-row:nth-child(odd) { background:var(--bg-2); }
+    .lap-row.best b { color:var(--neon-lime); }
+    .lap-row b { font-variant-numeric:tabular-nums; }
+
+    /* ---------- ESC calibration ---------- */
+    .cal-grid { display:flex; flex-direction:column; gap:10px; }
+
+    /* ---------- Claim (multi-cabinet) ---------- */
+    .car .claim-tag {
+      position:absolute; top:12px; left:12px; font-size:10px; letter-spacing:1px; font-weight:800;
+      padding:4px 8px; border-radius:6px; background:rgba(255,176,32,0.9); color:#04060a; z-index:2;
+    }
+    .car.active .claim-tag { top:40px; }
   </style>
 </head>
 <body>
@@ -330,6 +371,20 @@
   <main>
     <!-- ============ SIDEBAR: connection panels ============ -->
     <aside class="sidebar">
+      <section class="panel safety-panel">
+        <div class="panel-head">
+          <h2>Safety</h2>
+          <span class="safety-badge idle" id="safetyState">DISARMED</span>
+        </div>
+        <div class="btn-row">
+          <button id="btnArm" class="arm">⏻ ARM</button>
+          <button id="btnEstop" class="estop">■ STOP</button>
+        </div>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5">
+          Car only drives when <b>ARMED</b>. Throttle must be at rest to arm. <b>STOP</b> or <kbd>Space</kbd> = E-stop; <kbd>Enter</kbd> = arm.
+        </p>
+      </section>
+
       <section class="panel">
         <h2>USB Transmitter</h2>
         <div class="kv"><span>Link</span><b id="serialState">DISCONNECTED</b></div>
@@ -375,6 +430,31 @@
             How hard the motor brakes when you lift off / downshift (0 = coast only). Each gear caps top speed. Bind shift up/down to controller buttons in <b>Test &amp; Map Controls</b>.
           </p>
         </div>
+        <button id="btnSound" style="margin-top:12px;">🔈 Engine Sound: OFF</button>
+        <button id="btnCalibrate" style="margin-top:10px;">🛠 Calibrate ESC</button>
+      </section>
+
+      <section class="panel">
+        <h2>Steering Tuning</h2>
+        <div class="slider-head"><span>Trim (center)</span><b id="trimVal">0°</b></div>
+        <input type="range" id="trimSlider" min="-30" max="30" step="1" value="0" />
+        <div class="slider-head" style="margin-top:10px;"><span>Endpoint / Travel</span><b id="epaVal">100%</b></div>
+        <input type="range" id="epaSlider" min="50" max="100" step="5" value="100" />
+        <div class="slider-head" style="margin-top:10px;"><span>Expo</span><b id="expoVal">0%</b></div>
+        <input type="range" id="expoSlider" min="-100" max="100" step="10" value="0" />
+        <button id="btnInvertSteer" class="rev" style="margin-top:12px;">⇄ Invert Steering: OFF</button>
+      </section>
+
+      <section class="panel">
+        <h2>Race Timer</h2>
+        <div class="lap-current" id="lapCurrent">0.0</div>
+        <div class="kv"><span>Best Lap</span><b id="lapBest">—</b></div>
+        <div class="btn-row">
+          <button id="btnTimer" class="primary">▶ Start</button>
+          <button id="btnLap">⚑ Lap</button>
+          <button id="btnTimerReset" class="danger">Reset</button>
+        </div>
+        <div class="lap-list" id="lapList"></div>
       </section>
 
       <section class="panel">
@@ -401,12 +481,16 @@
         <div class="no-signal" id="noSignal">◍ NO SIGNAL ◍</div>
         <div class="hud">
           <div class="corner tl">
-            <div class="label">Target</div>
+            <div class="label">Target · <span id="hudArm" style="color:var(--text-dim)">DISARMED</span></div>
             <div class="val" id="hudTarget">—</div>
+            <div class="label" style="margin-top:4px;">Battery / RSSI</div>
+            <div class="val" id="hudBatt" style="font-size:15px;color:var(--text-dim)">—</div>
           </div>
           <div class="corner tr telem-ok" id="hudLinkBox">
             <div class="label">Link / TX Rate</div>
             <div class="val" id="hudRate">0 Hz</div>
+            <div class="label" style="margin-top:4px;">Latency</div>
+            <div class="val" id="hudLatency" style="font-size:15px;">— ms</div>
           </div>
           <div class="corner tc" id="hudDrive" style="top:0;left:50%;transform:translateX(-50%);text-align:center;">
             <div class="shift-lights" id="shiftLights"></div>
@@ -426,7 +510,10 @@
           <div class="reticle"></div>
         </div>
         <button class="vp-btn" id="btnFullscreen" title="Toggle fullscreen">⛶ Fullscreen</button>
+        <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
+        <button class="vp-stop" id="btnEstopHud" title="Emergency stop (Space)">■ STOP</button>
       </div>
+      <canvas id="snapCanvas" style="display:none"></canvas>
 
       <div class="bars">
         <div class="bar-wrap">
@@ -486,6 +573,20 @@
         <div class="field"><label for="carGrip">Grip</label><input type="number" id="carGrip" min="0" max="100" value="70" /></div>
         <div class="field"><label for="carAcc">Accel</label><input type="number" id="carAcc" min="0" max="100" value="70" /></div>
       </div>
+
+      <div style="border-top:1px dashed var(--stroke);margin:4px 0 14px;padding-top:12px;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--neon-cyan);">Per-car tuning <span style="color:var(--text-dim);text-transform:none;letter-spacing:0;">— applied when you select this car</span></div>
+      <div class="field-row">
+        <div class="field"><label for="carPower">Max Power %</label><input type="number" id="carPower" min="10" max="100" value="100" /></div>
+        <div class="field">
+          <label for="carTrans">Transmission</label>
+          <select id="carTrans"><option value="auto">Automatic</option><option value="manual">Manual</option></select>
+        </div>
+        <div class="field"><label for="carTrim">Steer Trim °</label><input type="number" id="carTrim" min="-30" max="30" value="0" /></div>
+        <div class="field" style="flex:0 0 92px;">
+          <label for="carInvert">Invert Steer</label>
+          <select id="carInvert"><option value="no">No</option><option value="yes">Yes</option></select>
+        </div>
+      </div>
       <div class="err-msg" id="carErr"></div>
       <div class="modal-actions">
         <button class="primary" id="carSave">Save Vehicle</button>
@@ -515,6 +616,29 @@
       <div class="modal-actions">
         <button class="primary" id="importSave">Import</button>
         <button id="importCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: ESC calibration helper ============ -->
+  <div class="overlay" id="calOverlay">
+    <div class="modal">
+      <h3>ESC Calibration Helper</h3>
+      <p class="hint" style="margin-bottom:14px;line-height:1.6">
+        Most ESCs learn their throttle range once. <b>Prop off / wheels up first.</b> Typical procedure:
+        1) power ESC OFF · 2) hold <b>Full Forward</b> · 3) power ESC ON, wait for tones · 4) tap <b>Neutral</b> ·
+        5) tap <b>Full Reverse</b> · 6) back to <b>Neutral</b>. Follow your ESC's manual for the exact beeps.
+        These buttons send raw <code>DRIVE</code> frames to the selected car (bypassing arming).
+      </p>
+      <div class="cal-grid">
+        <button id="calFwd" class="primary">▲ Full Forward (255)</button>
+        <button id="calNeutral">● Neutral (0)</button>
+        <button id="calRev" class="danger">▼ Full Reverse (-255)</button>
+      </div>
+      <div class="kv" style="margin-top:14px;"><span>Last sent</span><b id="calLast">—</b></div>
+      <div class="err-msg" id="calErr"></div>
+      <div class="modal-actions">
+        <button id="calClose">Done</button>
       </div>
     </div>
   </div>
@@ -583,6 +707,12 @@
     powerLimit: 100,          // % cap on top speed (10..100)
     transmission: 'auto',     // 'auto' | 'manual'
     engBrake: 100,            // engine-braking strength (0..150 %), manual only
+    trim: 0,                  // steering trim, degrees added to center (-30..30)
+    epa: 100,                 // steering endpoint / travel, % (50..100)
+    expo: 0,                  // steering expo, % (-100..100; + softens center)
+    invertSteer: false,       // flip steering direction
+    lowBattV: 7.0,            // low-battery warning threshold (volts)
+    sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
   };
   // Per-gear top-speed cap, as % of Max Power. Index 0 = gear 1 ... index 5 = gear 6.
@@ -624,6 +754,19 @@
     lastSent: '', txCount: 0, txWindowStart: performance.now(),
     encoder: new TextEncoder(),
     testerTimer: null,
+    // ---- Safety ----
+    armed: false, estop: false,
+    // ---- Telemetry (from the transmitter/car) ----
+    lastDriveAt: 0, latencyMs: 0, ackOk: 0, ackFail: 0, vbat: null, rssi: null, telemAt: 0,
+    // ---- Keyboard driving fallback ----
+    keys: {},
+    // ---- Engine sound (WebAudio) ----
+    audio: null,
+    // ---- Lap timer ----
+    timer: { running: false, start: 0, elapsed: 0, laps: [], best: null },
+    // ---- Multi-cabinet presence ----
+    cabinetId: 'cab-' + Math.floor(performance.now()).toString(36) + '-' + (navigator.hardwareConcurrency || 0),
+    bc: null, claims: {},
   };
 
   /* ---------------- DOM helpers ---------------- */
@@ -674,6 +817,17 @@
   function axisToServo(axis) {
     const c = Math.max(-1, Math.min(1, axis));
     return Math.round((c + 1) * 90);
+  }
+  // Full steering pipeline: invert -> expo -> endpoint (EPA) -> map -> trim.
+  function computeSteer(axis) {
+    const cc = state.controls;
+    let a = Math.max(-1, Math.min(1, axis));
+    if (cc.invertSteer) a = -a;
+    const k = (cc.expo || 0) / 100;                 // +softer center, -sharper
+    a = (1 - Math.abs(k)) * a + k * a * a * a;
+    a *= (cc.epa ?? 100) / 100;                      // travel limit
+    let deg = Math.round((a + 1) * 90) + (cc.trim || 0);
+    return Math.max(0, Math.min(180, deg));
   }
   // Throttle pedal -> 0..255 with dead-zone cutoff to stop motor creep.
   function pedalToPwm(axisRaw, rest, deadzone) {
@@ -750,10 +904,10 @@
   /* =================================================================
      WEB SERIAL — safe open / write / close / disconnect
      ================================================================= */
-  async function serialConnect() {
+  async function serialConnect(existingPort) {
     if (!('serial' in navigator)) { log('Web Serial not supported in this browser.', 'err'); return; }
     try {
-      const port = await navigator.serial.requestPort();
+      const port = existingPort || await navigator.serial.requestPort();
       await port.open({ baudRate: 115200 });
       state.port = port;
       state.writer = port.writable.getWriter();
@@ -804,7 +958,7 @@
           while ((idx = buf.indexOf('\n')) >= 0) {
             const line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
-            if (line) log('RX ◂ ' + line);
+            if (line) handleSerialLine(line);
           }
         }
       }
@@ -814,6 +968,34 @@
       reader.releaseLock();
       await closed;
     }
+  }
+
+  // Parse an inbound serial line: telemetry lines update state, others are logged.
+  function handleSerialLine(line) {
+    if (line.startsWith('ACK')) {
+      // ACK,<seq>,OK|FAIL  or  ACK,OK|FAIL
+      const parts = line.split(',');
+      const status = parts[parts.length - 1];
+      if (status === 'OK') {
+        state.ackOk++;
+        if (state.lastDriveAt) {
+          const rtt = performance.now() - state.lastDriveAt;
+          if (rtt >= 0 && rtt < 1000) state.latencyMs = state.latencyMs ? state.latencyMs * 0.8 + rtt * 0.2 : rtt;
+        }
+      } else { state.ackFail++; }
+      return; // don't spam the log at 50 Hz
+    }
+    if (line.startsWith('TELEM')) {
+      // TELEM,<millivolts>,<rssi>
+      const p = line.split(',');
+      const mv = parseInt(p[1], 10);
+      const rssi = parseInt(p[2], 10);
+      if (!isNaN(mv)) state.vbat = mv / 1000;
+      if (!isNaN(rssi)) state.rssi = rssi;
+      state.telemAt = performance.now();
+      return;
+    }
+    log('RX ◂ ' + line);
   }
 
   async function serialWrite(str) {
@@ -831,9 +1013,23 @@
     navigator.serial.addEventListener('disconnect', (e) => {
       if (state.port && e.target === state.port) {
         log('USB transmitter physically removed.', 'err');
+        safetyHold('transmitter unplugged');
         serialDisconnect();
       }
     });
+    // Auto-reconnect when a previously-granted transmitter is plugged back in.
+    navigator.serial.addEventListener('connect', (e) => {
+      if (!state.port) { log('Transmitter detected — reconnecting…'); serialConnect(e.target); }
+    });
+  }
+
+  // On boot, silently reopen a port the user already granted (no prompt needed).
+  async function tryAutoConnect() {
+    if (!('serial' in navigator)) return;
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (ports.length && !state.port) { log('Reopening remembered transmitter…'); await serialConnect(ports[0]); }
+    } catch (_) {}
   }
 
   /* ---------------- Packet builders ---------------- */
@@ -846,6 +1042,7 @@
     const packet = `DRIVE,${servoDeg},${motorPwm}\n`;
     if (packet === state.lastSent) return;
     state.lastSent = packet;
+    state.lastDriveAt = performance.now(); // for latency measurement via ACK
     serialWrite(packet);
   }
 
@@ -867,8 +1064,10 @@
       el.className = 'car' + (v.id === state.selectedId ? ' active' : '');
       el.style.setProperty('--accent', v.accent);
       el.style.setProperty('--glow', hexToRgba(v.accent, 0.33));
+      const claimed = state.claims[v.mac];
       el.innerHTML = `
         <div class="active-tag">◉ Active</div>
+        ${claimed ? '<div class="claim-tag" title="Selected by another cabinet">⚠ IN USE</div>' : ''}
         <div class="car-actions">
           <button class="icon-btn" data-act="edit" title="Edit vehicle">✎</button>
           <button class="icon-btn" data-act="del" title="Delete vehicle">🗑</button>
@@ -903,17 +1102,42 @@
   function selectVehicle(id) {
     const v = state.vehicles.find((x) => x.id === id);
     if (!v) return;
+    const prev = selected();
+    if (prev && prev.mac !== v.mac) announceRelease(prev.mac);
     state.selectedId = id;
     $('hudTarget').textContent = v.mac.slice(-8);
+    // Selecting a car disarms for safety — you must explicitly re-arm.
+    safetyHold('vehicle change');
+    // Apply this car's saved tuning, if any.
+    applyVehicleTune(v);
     renderGrid();
     sendCarSwap(v);
-    log('Vehicle armed: ' + v.name);
+    announceClaim(v.mac);
+    if (state.claims[v.mac]) log('⚠ ' + v.mac + ' may be in use by cabinet ' + state.claims[v.mac].cabinet + '.', 'err');
+    log('Vehicle selected: ' + v.name + ' (press ARM to drive)');
+  }
+
+  // Merge a vehicle's optional per-car tune into the live control state.
+  function applyVehicleTune(v) {
+    if (!v.tune) return;
+    const t = v.tune;
+    if (typeof t.powerLimit === 'number') state.controls.powerLimit = t.powerLimit;
+    if (t.transmission) state.controls.transmission = t.transmission;
+    if (typeof t.trim === 'number') state.controls.trim = t.trim;
+    if (typeof t.invertSteer === 'boolean') state.controls.invertSteer = t.invertSteer;
+    if (state.controls.transmission === 'manual') state.gear = 1;
+    state.vspeed = 0; state.rpm = 0;
+    saveControls();
+    updateDrivetrainUI();
+    updateTuneUI();
+    log('Applied ' + v.name + ' tuning.');
   }
 
   function deleteVehicle(v) {
     if (!confirm(`Delete "${v.name}" (${v.mac}) from the lobby?`)) return;
+    announceRelease(v.mac);
     state.vehicles = state.vehicles.filter((x) => x.id !== v.id);
-    if (state.selectedId === v.id) { state.selectedId = null; $('hudTarget').textContent = '—'; }
+    if (state.selectedId === v.id) { state.selectedId = null; $('hudTarget').textContent = '—'; safetyHold('vehicle deleted'); }
     saveRoster();
     renderGrid();
     log('Vehicle removed: ' + v.name);
@@ -933,6 +1157,11 @@
     $('carSpd').value    = isEdit ? (vehicle.stats?.spd ?? 70) : 70;
     $('carGrip').value   = isEdit ? (vehicle.stats?.grip ?? 70) : 70;
     $('carAcc').value    = isEdit ? (vehicle.stats?.acc ?? 70) : 70;
+    const tune = (isEdit && vehicle.tune) || {};
+    $('carPower').value  = tune.powerLimit ?? 100;
+    $('carTrans').value  = tune.transmission || 'auto';
+    $('carTrim').value   = tune.trim ?? 0;
+    $('carInvert').value = tune.invertSteer ? 'yes' : 'no';
     $('carErr').textContent = '';
     $('carOverlay').classList.add('open');
     $('carName').focus();
@@ -947,6 +1176,12 @@
     const accent = $('carAccent').value;
     const clampStat = (x) => Math.max(0, Math.min(100, parseInt(x, 10) || 0));
     const stats = { spd: clampStat($('carSpd').value), grip: clampStat($('carGrip').value), acc: clampStat($('carAcc').value) };
+    const tune = {
+      powerLimit: Math.max(10, Math.min(100, parseInt($('carPower').value, 10) || 100)),
+      transmission: $('carTrans').value === 'manual' ? 'manual' : 'auto',
+      trim: Math.max(-30, Math.min(30, parseInt($('carTrim').value, 10) || 0)),
+      invertSteer: $('carInvert').value === 'yes',
+    };
 
     if (!name) { $('carErr').textContent = 'Vehicle name is required.'; return; }
     if (!mac)  { $('carErr').textContent = 'Invalid MAC — expected 6 hex bytes, e.g. AA:BB:CC:DD:EE:FF.'; return; }
@@ -957,12 +1192,12 @@
 
     if (id) {
       const v = state.vehicles.find((x) => x.id === id);
-      if (v) { Object.assign(v, { name, sprite, mac, accent, stats }); }
-      if (state.selectedId === id) $('hudTarget').textContent = mac.slice(-8);
+      if (v) { Object.assign(v, { name, sprite, mac, accent, stats, tune }); }
+      if (state.selectedId === id) { $('hudTarget').textContent = mac.slice(-8); applyVehicleTune(state.vehicles.find((x) => x.id === id)); }
       log('Vehicle updated: ' + name + ' → ' + mac);
     } else {
       const newId = 'car_' + mac.replace(/:/g, '').toLowerCase();
-      state.vehicles.push({ id: newId, name, sprite, mac, accent, stats });
+      state.vehicles.push({ id: newId, name, sprite, mac, accent, stats, tune });
       log('Vehicle registered: ' + name + ' → ' + mac);
     }
     saveRoster();
@@ -1056,6 +1291,7 @@
       $('padName').textContent = 'NONE';
       setChip('chipGamepad', false);
       log('Wheel disconnected.', 'err');
+      safetyHold('controller disconnected');
     }
   });
 
@@ -1074,12 +1310,12 @@
      50 Hz CONTROL LOOP
      ================================================================= */
   function controlTick() {
-    const input = readGamepad();
+    const input = readGamepad() || readKeyboard();  // wheel first, else keyboard
     handleMappedButtons(); // shift up/down + reverse edges
     const manual = state.controls.transmission === 'manual';
     let servo = 90, base = 0;
     if (input) {
-      servo = axisToServo(input.steerAxis);
+      servo = computeSteer(input.steerAxis);
       base = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
@@ -1093,10 +1329,30 @@
       state.rpm = manual ? state.vspeed / Math.max(GEAR_CAPS[state.gear - 1] / 100, 0.001) : 0;
     }
 
+    // ---- Safety gate: nothing drives unless armed; E-STOP fully neutralizes ----
+    if (state.estop) { servo = 90; motor = 0; state.vspeed = 0; }
+    else if (!state.armed) { motor = 0; }
+
     state.lastSteer = servo;
     state.lastMotor = motor;
     if (selected()) sendDrive(servo, motor);
+    updateEngineSound();
     paintHud(servo, motor);
+  }
+
+  // Keyboard driving fallback (used only when no gamepad is bound).
+  function readKeyboard() {
+    if (state.padIndex !== null) return null;
+    const k = state.keys;
+    const anyKey = k['w'] || k['s'] || k['a'] || k['d'] ||
+      k['arrowup'] || k['arrowdown'] || k['arrowleft'] || k['arrowright'];
+    if (!anyKey) return { steerAxis: 0, throttleAxis: (state.controls.rest === 'neg' ? -1 : 0) };
+    let steer = 0;
+    if (k['a'] || k['arrowleft']) steer -= 1;
+    if (k['d'] || k['arrowright']) steer += 1;
+    const gas = (k['w'] || k['arrowup']) ? 1 : 0;   // 0..1 press
+    const throttleAxis = state.controls.rest === 'neg' ? (gas * 2 - 1) : gas;
+    return { steerAxis: steer, throttleAxis };
   }
 
   // Rising-edge detection for the gamepad buttons bound to shift/reverse.
@@ -1225,15 +1481,242 @@
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
   }
 
+  /* =================================================================
+     STEERING TUNING — trim / endpoint / expo / invert
+     ================================================================= */
+  function setTrim(v)  { state.controls.trim = Math.max(-30, Math.min(30, v | 0)); saveControls(); updateTuneUI(); }
+  function setEpa(v)   { state.controls.epa = Math.max(50, Math.min(100, v | 0)); saveControls(); updateTuneUI(); }
+  function setExpo(v)  { state.controls.expo = Math.max(-100, Math.min(100, v | 0)); saveControls(); updateTuneUI(); }
+  function toggleInvertSteer() { state.controls.invertSteer = !state.controls.invertSteer; saveControls(); updateTuneUI(); }
+  function updateTuneUI() {
+    const c = state.controls;
+    $('trimVal').textContent = (c.trim > 0 ? '+' : '') + c.trim + '°';
+    $('trimSlider').value = c.trim;
+    $('epaVal').textContent = c.epa + '%';
+    $('epaSlider').value = c.epa;
+    $('expoVal').textContent = (c.expo > 0 ? '+' : '') + c.expo + '%';
+    $('expoSlider').value = c.expo;
+    const b = $('btnInvertSteer');
+    b.classList.toggle('on', c.invertSteer);
+    b.textContent = '⇄ Invert Steering: ' + (c.invertSteer ? 'ON' : 'OFF');
+  }
+
+  /* =================================================================
+     FPV SNAPSHOT
+     ================================================================= */
+  function snapshot() {
+    const video = $('fpv');
+    if (!video.srcObject || !video.videoWidth) { log('No FPV feed to capture.', 'err'); return; }
+    const cv = $('snapCanvas');
+    cv.width = video.videoWidth; cv.height = video.videoHeight;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    // Burn a minimal HUD line into the still.
+    ctx.font = '16px monospace'; ctx.fillStyle = 'rgba(0,229,255,0.95)';
+    const tag = (selected() ? selected().name : 'FPV') + '  ' + new Date().toLocaleTimeString();
+    ctx.fillText(tag, 12, cv.height - 14);
+    cv.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'fpv-' + Date.now() + '.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      log('Snapshot saved.');
+    }, 'image/png');
+  }
+
+  /* =================================================================
+     ESC CALIBRATION HELPER — sends raw DRIVE frames (bypasses arming)
+     ================================================================= */
+  function openCalModal() { $('calErr').textContent = ''; $('calLast').textContent = '—'; $('calOverlay').classList.add('open'); }
+  function closeCalModal() { $('calOverlay').classList.remove('open'); calSend(0); }
+  function calSend(motor) {
+    if (!selected()) { $('calErr').textContent = 'Select a vehicle first.'; return; }
+    if (!state.writer) { $('calErr').textContent = 'Connect the transmitter first.'; return; }
+    // Bypass the dedup + arming gate: send directly.
+    state.lastSent = ''; serialWrite(`DRIVE,90,${motor}\n`); state.lastDriveAt = performance.now();
+    $('calLast').textContent = `DRIVE,90,${motor}`;
+  }
+
+  /* =================================================================
+     SAFETY — arming, E-STOP, browser-side failsafe
+     ================================================================= */
+  function currentThrottleBase() {
+    const input = readGamepad() || readKeyboard();
+    return input ? pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone) : 0;
+  }
+  function setArmed(on) {
+    if (on) {
+      state.estop = false;
+      if (currentThrottleBase() > state.controls.deadzone) {
+        log('Release the throttle before arming.', 'err'); updateSafetyUI(); return;
+      }
+      state.armed = true; log('⚡ ARMED — car is live.');
+    } else {
+      state.armed = false; forceNeutral(); log('Disarmed.');
+    }
+    updateSafetyUI();
+  }
+  function eStop() {
+    if (state.estop && !state.armed) return;
+    state.estop = true; state.armed = false; state.vspeed = 0; state.rpm = 0;
+    forceNeutral();
+    log('■ E-STOP — motion halted. Re-arm to resume.', 'err');
+    updateSafetyUI();
+  }
+  // Soft failsafe used when the tab/controller drops: just disarm + neutral.
+  function safetyHold(reason) {
+    if (state.armed) { state.armed = false; forceNeutral(); log('Failsafe: ' + reason + ' → disarmed.', 'err'); updateSafetyUI(); }
+  }
+  function forceNeutral() { if (selected()) sendDrive(90, 0); paintHud(90, 0); }
+  function updateSafetyUI() {
+    const b = $('btnArm');
+    const st = state.estop ? 'E-STOP' : state.armed ? 'ARMED' : 'DISARMED';
+    b.textContent = state.armed ? '⏻ DISARM' : '⏻ ARM';
+    b.classList.toggle('armed', state.armed);
+    const badge = $('safetyState');
+    badge.textContent = st;
+    badge.className = 'safety-badge ' + (state.estop ? 'estop' : state.armed ? 'armed' : 'idle');
+    $('hudArm').textContent = st;
+    $('hudArm').style.color = state.estop ? 'var(--bad)' : state.armed ? 'var(--ok)' : 'var(--text-dim)';
+  }
+
+  /* =================================================================
+     ENGINE SOUND — WebAudio synth tied to RPM / throttle
+     ================================================================= */
+  function toggleSound() {
+    state.controls.sound = !state.controls.sound;
+    saveControls();
+    if (state.controls.sound) startEngineSound(); else stopEngineSound();
+    $('btnSound').classList.toggle('on', state.controls.sound);
+    $('btnSound').textContent = state.controls.sound ? '🔊 Engine Sound: ON' : '🔈 Engine Sound: OFF';
+  }
+  function startEngineSound() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const sub = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth'; sub.type = 'square';
+      gain.gain.value = 0.0001;
+      osc.connect(gain); sub.connect(gain); gain.connect(ctx.destination);
+      osc.start(); sub.start();
+      state.audio = { ctx, osc, sub, gain };
+    } catch (_) {}
+  }
+  function stopEngineSound() {
+    const a = state.audio; state.audio = null;
+    if (a) { try { a.osc.stop(); a.sub.stop(); a.ctx.close(); } catch (_) {} }
+  }
+  function updateEngineSound() {
+    const a = state.audio; if (!a) return;
+    const manual = state.controls.transmission === 'manual';
+    const load = manual ? Math.min(1, state.rpm) : Math.abs(state.lastMotor) / 255;
+    const idle = 55, top = 420;
+    const freq = idle + load * (top - idle);
+    const now = a.ctx.currentTime;
+    a.osc.frequency.setTargetAtTime(freq, now, 0.03);
+    a.sub.frequency.setTargetAtTime(freq / 2, now, 0.03);
+    const vol = state.armed && !state.estop ? 0.02 + load * 0.10 : 0.008; // idle hum when disarmed
+    a.gain.gain.setTargetAtTime(vol, now, 0.05);
+  }
+
+  /* =================================================================
+     LAP TIMER
+     ================================================================= */
+  function fmtTime(ms) {
+    const t = Math.max(0, ms);
+    const m = Math.floor(t / 60000);
+    const s = Math.floor((t % 60000) / 1000);
+    const cs = Math.floor((t % 1000) / 10);
+    return (m ? m + ':' : '') + String(s).padStart(m ? 2 : 1, '0') + '.' + String(cs).padStart(2, '0');
+  }
+  function timerToggle() {
+    const T = state.timer;
+    if (T.running) { T.elapsed += performance.now() - T.start; T.running = false; }
+    else { T.start = performance.now(); T.running = true; }
+    $('btnTimer').textContent = T.running ? '⏸ Pause' : '▶ Start';
+  }
+  function timerLap() {
+    const T = state.timer;
+    const cur = timerNow();
+    const prev = T.laps.reduce((a, b) => a + b, 0);
+    const lap = cur - prev;
+    if (lap <= 0) return;
+    T.laps.push(lap);
+    if (T.best === null || lap < T.best) T.best = lap;
+    renderLaps();
+  }
+  function timerReset() {
+    state.timer = { running: false, start: 0, elapsed: 0, laps: [], best: null };
+    $('btnTimer').textContent = '▶ Start';
+    renderLaps();
+  }
+  function timerNow() { const T = state.timer; return T.elapsed + (T.running ? performance.now() - T.start : 0); }
+  function renderLaps() {
+    const T = state.timer;
+    $('lapBest').textContent = T.best !== null ? fmtTime(T.best) : '—';
+    $('lapList').innerHTML = T.laps.map((l, i) =>
+      `<div class="lap-row ${l === T.best ? 'best' : ''}"><span>Lap ${i + 1}</span><b>${fmtTime(l)}</b></div>`
+    ).reverse().join('') || '<div class="lap-row"><span style="color:var(--text-dim)">No laps yet</span></div>';
+  }
+  function timerTick() { $('lapCurrent').textContent = fmtTime(timerNow()); }
+
+  /* =================================================================
+     MULTI-CABINET PRESENCE (best-effort, same-origin via BroadcastChannel)
+     ================================================================= */
+  function initPresence() {
+    if (!('BroadcastChannel' in window)) return;
+    state.bc = new BroadcastChannel('rcarcade.presence');
+    state.bc.onmessage = (e) => {
+      const m = e.data;
+      if (!m || m.cabinet === state.cabinetId) return;
+      if (m.type === 'claim' && m.mac) {
+        state.claims[m.mac] = { cabinet: m.cabinet, ts: Date.now() };
+        if (selected() && selected().mac === m.mac) {
+          log('⚠ Another cabinet (' + m.cabinet + ') also selected ' + m.mac + '.', 'err');
+        }
+        renderGrid();
+      } else if (m.type === 'release' && m.mac) {
+        delete state.claims[m.mac]; renderGrid();
+      } else if (m.type === 'who') {
+        if (selected()) announceClaim(selected().mac);
+      }
+    };
+    state.bc.postMessage({ type: 'who', cabinet: state.cabinetId });
+  }
+  function announceClaim(mac) { state.bc?.postMessage({ type: 'claim', cabinet: state.cabinetId, mac }); }
+  function announceRelease(mac) { state.bc?.postMessage({ type: 'release', cabinet: state.cabinetId, mac }); }
+
   function rateTick() {
     const now = performance.now();
     const dt = (now - state.txWindowStart) / 1000;
     const hz = dt > 0 ? Math.round(state.txCount / dt) : 0;
     $('hudRate').textContent = hz + ' Hz';
-    $('padHz').textContent = state.padIndex !== null ? POLL_HZ + ' Hz' : '— Hz';
+    $('padHz').textContent = state.padIndex !== null ? POLL_HZ + ' Hz' : (Object.keys(state.keys).length ? 'KEYS' : '— Hz');
     $('hudLinkBox').className = 'corner tr ' + (state.writer ? 'telem-ok' : 'telem-bad');
     state.txCount = 0;
     state.txWindowStart = now;
+
+    // Telemetry HUD: latency, packet loss, battery, RSSI
+    const total = state.ackOk + state.ackFail;
+    const loss = total ? Math.round((state.ackFail / total) * 100) : 0;
+    $('hudLatency').textContent = state.latencyMs ? Math.round(state.latencyMs) + 'ms · ' + loss + '% loss' : '— ms';
+    const stale = performance.now() - state.telemAt > 3000;
+    if (state.vbat === null || stale) {
+      $('hudBatt').textContent = '—';
+      $('hudBatt').style.color = 'var(--text-dim)';
+    } else {
+      const low = state.vbat <= state.controls.lowBattV;
+      $('hudBatt').textContent = state.vbat.toFixed(1) + 'V' + (state.rssi !== null ? ' · ' + state.rssi + 'dBm' : '');
+      $('hudBatt').style.color = low ? 'var(--bad)' : 'var(--ok)';
+      if (low && !state._lowWarned) { log('⚠ LOW BATTERY: ' + state.vbat.toFixed(1) + 'V', 'err'); state._lowWarned = true; }
+      if (!low) state._lowWarned = false;
+    }
+    // decay ack window so loss% reflects recent history
+    if (total > 100) { state.ackOk = Math.round(state.ackOk / 2); state.ackFail = Math.round(state.ackFail / 2); }
   }
 
   /* =================================================================
@@ -1415,12 +1898,20 @@
     buildShiftLights();
     renderGrid();
     enumerateVideo();
+    initPresence();
 
     // Connection controls
-    $('btnSerialConnect').addEventListener('click', serialConnect);
+    $('btnSerialConnect').addEventListener('click', () => serialConnect());
     $('btnSerialDisconnect').addEventListener('click', serialDisconnect);
     $('btnVideo').addEventListener('click', startVideo);
     $('btnFullscreen').addEventListener('click', toggleFullscreen);
+    $('btnSnapshot').addEventListener('click', snapshot);
+
+    // Safety
+    $('btnArm').addEventListener('click', () => setArmed(!state.armed));
+    $('btnEstop').addEventListener('click', eStop);
+    $('btnEstopHud').addEventListener('click', eStop);
+    updateSafetyUI();
 
     // Drivetrain controls
     $('powerSlider').addEventListener('input', (e) => setPowerLimit(parseInt(e.target.value, 10)));
@@ -1430,7 +1921,29 @@
     $('btnReverse').addEventListener('click', toggleReverse);
     $('btnShiftUp').addEventListener('click', () => shiftGear(+1));
     $('btnShiftDown').addEventListener('click', () => shiftGear(-1));
+    $('btnSound').addEventListener('click', toggleSound);
+    $('btnCalibrate').addEventListener('click', openCalModal);
     updateDrivetrainUI();
+
+    // Steering tuning
+    $('trimSlider').addEventListener('input', (e) => setTrim(parseInt(e.target.value, 10)));
+    $('epaSlider').addEventListener('input', (e) => setEpa(parseInt(e.target.value, 10)));
+    $('expoSlider').addEventListener('input', (e) => setExpo(parseInt(e.target.value, 10)));
+    $('btnInvertSteer').addEventListener('click', toggleInvertSteer);
+    updateTuneUI();
+
+    // Race timer
+    $('btnTimer').addEventListener('click', timerToggle);
+    $('btnLap').addEventListener('click', timerLap);
+    $('btnTimerReset').addEventListener('click', timerReset);
+    renderLaps();
+
+    // ESC calibration
+    $('calFwd').addEventListener('click', () => calSend(255));
+    $('calNeutral').addEventListener('click', () => calSend(0));
+    $('calRev').addEventListener('click', () => calSend(-255));
+    $('calClose').addEventListener('click', closeCalModal);
+    $('calOverlay').addEventListener('click', (e) => { if (e.target === $('calOverlay')) closeCalModal(); });
 
     // Roster controls
     $('btnAddCar').addEventListener('click', () => openCarModal(null));
@@ -1453,16 +1966,47 @@
     ['mapSteer','mapThrottle','mapBrake','mapDeadzone','mapRest'].forEach((id) =>
       $(id).addEventListener('change', updateTester));
 
-    // Global ESC closes any open modal
+    // ---- Keyboard: driving + shortcuts ----
+    const editable = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); closeImportModal(); }
+      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); closeImportModal(); closeCalModal(); return; }
+      if (editable(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (k === ' ') { e.preventDefault(); eStop(); return; }
+      if (k === 'enter') { e.preventDefault(); setArmed(!state.armed); return; }
+      if (k === 'r') { toggleReverse(); return; }
+      if (k === 'e') { shiftGear(+1); return; }
+      if (k === 'q') { shiftGear(-1); return; }
+      // driving keys
+      if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
+        state.keys[k] = true; e.preventDefault();
+      }
     });
+    document.addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+      if (state.keys[k]) delete state.keys[k];
+    });
+
+    // ---- Browser failsafe: disarm when the tab/window loses focus ----
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { state.keys = {}; safetyHold('tab hidden'); } });
+    window.addEventListener('blur', () => { state.keys = {}; safetyHold('window blurred'); });
 
     setInterval(controlTick, POLL_MS);
     setInterval(rateTick, 1000);
+    setInterval(timerTick, 100);
 
-    log('Lobby initialized. Connect transmitter, wheel, and FPV feed to race.');
+    tryAutoConnect();
+    registerServiceWorker();
+
+    log('Lobby initialized. Select a car, ARM, then drive. Space = E-STOP.');
     if (!('serial' in navigator)) log('⚠ Web Serial requires Chrome/Edge (ChromeOS or Windows).', 'err');
+  }
+
+  // PWA: install + offline (no-op off HTTPS/localhost).
+  function registerServiceWorker() {
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
   }
 
   boot();

@@ -13,28 +13,61 @@ The whole control chain is browser → USB → radio → car:
 └─────────────────────────┘
 ```
 
-- **Frontend** — [`index.html`](index.html): a single, dependency-free HTML/CSS/JS file. No Node, npm, or build step.
-- **Master transmitter** — [`electronics/master_transmitter/master_transmitter.ino`](electronics/master_transmitter/master_transmitter.ino): decodes serial packets and forwards them over ESP-NOW, swapping the target peer on the fly.
-- **Car receiver** — [`electronics/car_receiver/car_receiver.ino`](electronics/car_receiver/car_receiver.ino): receives ESP-NOW frames and drives a steering servo (GPIO 18) and ESC/motor (GPIO 19).
+- **Frontend** — [`index.html`](index.html): a single, dependency-free HTML/CSS/JS file. No Node, npm, or build step. Installable as a PWA for offline/kiosk use.
+- **Master transmitter** — [`electronics/master_transmitter/master_transmitter.ino`](electronics/master_transmitter/master_transmitter.ino): decodes serial packets, forwards them over ESP-NOW (swapping the target peer on the fly), and relays car telemetry back.
+- **Car receiver** — [`electronics/car_receiver/car_receiver.ino`](electronics/car_receiver/car_receiver.ino): receives ESP-NOW frames, drives a steering servo (GPIO 18) and ESC/motor (GPIO 19), and reports battery + RSSI. A **toy-grade H-bridge variant** ([`car_receiver_toygrade`](electronics/car_receiver_toygrade/car_receiver_toygrade.ino)) covers non-servo chassis.
+
+### ✨ Features
+
+- **Visual lobby** — register/edit/delete cars in-app (MAC, icon, color, stats), Import/Export roster JSON.
+- **Zero-latency control** — 50 Hz Gamepad polling, lean serial packets, ESP-NOW; live latency + packet-loss readout.
+- **Drivetrain** — max-power cap, forward/reverse, 6-speed **manual gearbox** with a **10/20/40/60/80/100 %** per-gear curve, racing **RPM shift-lights**, and **simulated engine braking** (tunable strength).
+- **Safety** — arming (throttle-at-rest required), on-screen + spacebar **E-STOP**, and browser-side failsafe (disarms on tab blur / controller drop).
+- **Telemetry HUD** — gear, RPM, latency, packet loss, **battery voltage + low-battery warning**, RSSI.
+- **Tuning** — steering trim / endpoint (EPA) / expo / invert, plus **per-car** power/transmission/trim/invert saved with each vehicle.
+- **Extras** — keyboard driving fallback, WebAudio engine sound, FPV fullscreen + snapshot, lap timer, ESC calibration helper, and best-effort multi-cabinet "in use" presence.
 
 ---
 
 ## Table of Contents
 
-1. [Hardware you need](#-hardware-you-need)
-2. [Software you need](#-software-you-need)
-3. [Quick start (TL;DR)](#-quick-start-tldr)
-4. [Part A — Deploy the web app to GitHub Pages](#part-a--deploy-the-web-app-to-github-pages)
-5. [Part B — Set up the Arduino toolchain](#part-b--set-up-the-arduino-toolchain)
-6. [Part C — Flash the Master Transmitter](#part-c--flash-the-master-transmitter)
-7. [Part D — Flash the Car Receivers](#part-d--flash-the-car-receivers)
-8. [Part E — Register each car's MAC in the lobby](#part-e--register-each-cars-mac-in-the-lobby)
-9. [Part F — Wire the car hardware](#part-f--wire-the-car-hardware)
-10. [Using the arcade](#-using-the-arcade)
-11. [Serial protocol reference](#-serial-protocol-reference)
-12. [Calibration & tuning](#-calibration--tuning)
-13. [Troubleshooting](#-troubleshooting)
-14. [Repository layout](#-repository-layout)
+1. [Chassis compatibility (hobby / toy / 2-in-1 ESC)](#-chassis-compatibility)
+2. [Hardware you need](#-hardware-you-need)
+3. [Software you need](#-software-you-need)
+4. [Quick start (TL;DR)](#-quick-start-tldr)
+5. [Part A — Deploy the web app to GitHub Pages](#part-a--deploy-the-web-app-to-github-pages)
+6. [Part B — Set up the Arduino toolchain](#part-b--set-up-the-arduino-toolchain)
+7. [Part C — Flash the Master Transmitter](#part-c--flash-the-master-transmitter)
+8. [Part D — Flash the Car Receivers](#part-d--flash-the-car-receivers)
+9. [Part E — Register each car's MAC in the lobby](#part-e--register-each-cars-mac-in-the-lobby)
+10. [Part F — Wire the car hardware](#part-f--wire-the-car-hardware)
+11. [Using the arcade](#-using-the-arcade)
+12. [Serial protocol reference](#-serial-protocol-reference)
+13. [Calibration & tuning](#-calibration--tuning)
+14. [Troubleshooting](#-troubleshooting)
+15. [Repository layout](#-repository-layout)
+
+---
+
+## 🚗 Chassis compatibility
+
+**Does this work on toy-grade cars, or only hobby-grade?** Both — but they take different firmware and wiring.
+
+| Chassis type | How it drives | Works with… | Notes |
+|--------------|---------------|-------------|-------|
+| **Hobby-grade** (proportional servo + ESC) | Servo PWM + ESC PWM | [`car_receiver.ino`](electronics/car_receiver/car_receiver.ino) | Plug-and-play: servo → D18, ESC → D19. |
+| **Toy-grade** (two plain DC motors, no servo/ESC) | H-bridge PWM + bang-bang steer | [`car_receiver_toygrade.ino`](electronics/car_receiver_toygrade/car_receiver_toygrade.ino) | **Requires a hardware mod:** remove the toy RX board, add a dual H-bridge (TB6612 / DRV8833 / L298N). Steering is quantized to left/center/right; drive speed is PWM. The web app (gears, reverse, engine-braking) works unchanged. |
+
+**What about "2-in-1" ESCs?** Depends what's combined:
+
+| "2-in-1" means… | Compatible? | How |
+|-----------------|-------------|-----|
+| ESC + steering driver on one board, **two servo-PWM inputs** (common on crawlers) | ✅ Yes | D18 → steering input, D19 → throttle input, share ground. |
+| ESC + **BEC** (built-in 5 V supply) | ✅ Yes | Standard — use the BEC to power the ESP32/servo. |
+| ESC + **radio receiver** (all-in-one RTR RX-ESC) | ⚠️ Usually no | We replace the receiver, so there's nowhere to inject PWM unless the board exposes servo-PWM input pins. Use a standalone ESC instead. |
+| Toy-grade all-in-one board | ❌ Not directly | Use the toy-grade H-bridge variant above. |
+
+**Rule of thumb:** if the board accepts **standard servo-PWM signals**, it works. If it has an **integrated radio receiver** you can't feed, it doesn't.
 
 ---
 
@@ -161,6 +194,10 @@ Repeat for **every** car.
 
 The same `car_receiver.ino` is flashed to every car unchanged — cars are distinguished purely by their MAC address.
 
+> **Toy-grade chassis?** Flash [`car_receiver_toygrade.ino`](electronics/car_receiver_toygrade/car_receiver_toygrade.ino) instead (needs a dual H-bridge — see [Chassis compatibility](#-chassis-compatibility)). It prints `READY,RECEIVER_TOY,<mac>`.
+
+> ⚠️ **Reflash the master and all receivers together.** The `DriveFrame`/`TelemetryFrame` layouts must match on both ends — mixing old and new firmware will misread packets.
+
 ---
 
 ## Part E — Register each car's MAC in the lobby
@@ -224,13 +261,37 @@ git push
 
 ## 🎮 Using the arcade
 
-1. Open the GitHub Pages URL in **Chrome/Edge**.
+1. Open the GitHub Pages URL in **Chrome/Edge**. (The transmitter auto-reconnects if you've granted it before.)
 2. **USB Transmitter panel → Connect.** A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
-3. **Racing Wheel panel:** press any button/pedal on your wheel to bind it. Steering axis and poll rate appear live. If steering/throttle feel wrong, click **🎮 Test & Map Controls** (see below).
-4. **FPV Video panel:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use the **⛶ Fullscreen** button on the video to go full-screen (the HUD scales with it); press it again or hit `Esc` to exit.
-5. **Select Your Vehicle:** click a car in the grid. This sends a `CAR,..` peer swap; the car's MAC appears as the HUD **Target**.
-6. **Drivetrain panel:** set how the car behaves (see below) — cap the top speed, pick auto vs. manual, engage reverse.
-7. **Drive.** Steering and throttle bars, HUD numbers, and the TX-rate readout update at 50 Hz. The Telemetry Log shows outgoing `CAR`/`DRIVE` packets and any `ACK`/`RX` lines from the transmitter.
+3. **Racing Wheel panel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **🎮 Test & Map Controls**.
+4. **FPV Video panel:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **⛶ Fullscreen** (HUD scales with it), **📷** to save a still, and the red **■ STOP** for a panic kill.
+5. **Select Your Vehicle:** click a car in the grid. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
+6. **Drivetrain panel:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
+7. **⏻ ARM** (Safety panel) — the car will not move until armed, and the throttle must be at rest to arm.
+8. **Drive.** Steering/throttle bars and the HUD (gear, RPM, latency, packet loss, battery, RSSI) update at 50 Hz.
+
+### 🛑 Safety (read this)
+
+The car **only moves when ARMED**. This is deliberate:
+
+- **⏻ ARM / DISARM** — arming is refused unless the throttle is at rest, so a floored pedal can't launch the car on connect.
+- **■ STOP** (Safety panel, a big button on the video, or the **`Space`** key) — immediate E-STOP: motion halts and the car disarms. Re-arm to resume.
+- **Auto-disarm failsafe** — the app disarms and neutralizes if the browser tab loses focus, the window blurs, the controller disconnects, or the transmitter is unplugged.
+- `Enter` arms/disarms from the keyboard.
+
+### ⌨️ Keyboard driving (fallback)
+
+With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **`Space`** E-STOP, **`Enter`** arm.
+
+### 🎚️ Extras
+
+- **Steering Tuning panel** — trim (center), endpoint/travel (EPA), expo, and invert. All live and saved.
+- **Per-car tuning** — the Edit dialog has optional Max Power / Transmission / Steer Trim / Invert saved *with* the car and applied when you select it.
+- **🔊 Engine Sound** — WebAudio synth whose pitch tracks RPM/throttle (toggle in Drivetrain).
+- **🛠 Calibrate ESC** — a guided helper that sends raw full-forward / neutral / full-reverse pulses for ESC throttle-range calibration.
+- **Race Timer** — Start/Lap/Reset with best-lap tracking.
+- **Multi-cabinet presence** — if another cabinet (same browser origin) selects the same car, an **⚠ IN USE** badge appears. *Note: this is best-effort over `BroadcastChannel` and only coordinates cabinets sharing an origin/profile — it does not synchronize across separate machines.*
+- **Install / offline** — it's a PWA; install it for kiosk use and it runs offline (control needs the USB transmitter, of course).
 
 ### ⚙️ Drivetrain (power, reverse, gearbox)
 
@@ -289,7 +350,8 @@ All packets are lean, newline-terminated ASCII at **115200 baud**.
 |--------|---------|
 | `READY,MASTER,<mac>` | Boot banner. |
 | `OK,CAR,<mac>` | Peer swap accepted. |
-| `ACK,OK` / `ACK,FAIL` | ESP-NOW delivery status for the last frame. |
+| `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. |
+| `TELEM,<millivolts>,<rssi>` | Car telemetry relayed to the browser: **battery** and **RSSI**. Drives the HUD battery/low-battery warning. |
 | `ERR,<code>` | Parse/target error (`CAR_LEN`, `NO_TARGET`, `OVERFLOW`, …). |
 
 ### Over the air (Master → Car, binary)
@@ -303,6 +365,16 @@ typedef struct __attribute__((packed)) {
 ```
 
 The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward).
+
+### Over the air (Car → Master, binary)
+The car learns the master's MAC from the first frame it receives, then sends back a packed `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
+```c
+typedef struct __attribute__((packed)) {
+  uint16_t vbat_mv; // battery millivolts (0 if unmeasured)
+  int8_t   rssi;    // dBm the car heard from the master
+} TelemetryFrame;
+```
+Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` (GPIO 34) with the right `BATTERY_DIVIDER` ratio. RSSI works with no extra wiring.
 
 ---
 
@@ -352,7 +424,11 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 | **Reverse does nothing** | The ESC isn't in a reverse-capable mode — enable reverse in the ESC's own programming. Confirm the app is sending a negative motor value (HUD shows `R`). |
 | **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Caps are 10/20/40/60/80/100% of Max Power for gears 1–6. |
 | **Shift lights / gear not showing** | They only appear in **Manual** (Automatic shows `D`). The strip hides in reverse. |
-| **Engine braking nudges the car backward** | Your ESC does instant reverse — lower `SIM.brakeCmd` in `index.html`, or set the ESC to forward/brake mode. |
+| **Engine braking nudges the car backward** | Your ESC does instant reverse — lower the **Engine Braking** slider (or `SIM.brakeCmd`), or set the ESC to forward/brake mode. |
+| **Car won't move at all** | It's probably **DISARMED** — press **⏻ ARM** (throttle must be at rest). Check the Safety badge / HUD arm state. |
+| **Keeps disarming itself** | That's the failsafe: clicking away, hiding the tab, or a controller/USB drop all disarm on purpose. Keep the tab focused. |
+| **Battery reads `—`** | Battery sensing is off by default. Set `BATTERY_ENABLED = true` and wire a divider on the car (RSSI/latency work regardless). |
+| **`⚠ IN USE` badge** | Another cabinet on the same browser origin selected that car. Presence is best-effort and does not span separate machines. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
 | **Steering/throttle on the wrong axis, or reversed** | Open **🎮 Test & Map Controls**, wiggle each control to find its axis index, reassign, and Save. |
 | **Registered cars vanished / defaults came back** | The roster lives in that browser's localStorage. A different browser, profile, or cleared site data starts from `DEFAULT_VEHICLES`. Use **⇩ Export** to move a roster between machines. |
@@ -367,14 +443,19 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 ```
 conradrc/
 ├── index.html                                  # Static arcade lobby web app (deploy to GitHub Pages)
+├── manifest.webmanifest                        # PWA manifest (install / offline)
+├── sw.js                                       # Service worker (offline cache)
+├── icon.svg                                    # App icon
 ├── README.md                                   # This file
 ├── docs/
 │   └── wiring.svg                              # Car receiver wiring diagram (embedded above)
 └── electronics/
     ├── master_transmitter/
-    │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge
-    └── car_receiver/
-        └── car_receiver.ino                    # Car-side ESP32: ESP-NOW → servo (D18) + ESC (D19)
+    │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge + telemetry relay
+    ├── car_receiver/
+    │   └── car_receiver.ino                    # Hobby-grade: ESP-NOW → servo (D18) + ESC (D19) + battery/RSSI
+    └── car_receiver_toygrade/
+        └── car_receiver_toygrade.ino           # Toy-grade: ESP-NOW → dual H-bridge (PWM drive + bang-bang steer)
 ```
 
 ---

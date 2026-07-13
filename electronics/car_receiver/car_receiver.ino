@@ -8,12 +8,15 @@
               - ESC / drive motor-> GPIO 19 (D19)
 
    Steering : standard proportional servo, 0..180 deg (90 = center).
-   ESC      : servo-style pulse; neutral ~1500us, forward-only mapping
-              from the 0..255 motor byte in this baseline blueprint.
+   ESC      : servo-style pulse; -255..255 signed motor (neg = reverse).
+
+   TELEMETRY: the car learns the master's MAC from the first frame it
+   receives, then periodically sends back battery voltage + RSSI, which
+   the master relays to the browser HUD.
 
    NOTE: Flash each chassis, then read its printed MAC on boot and
-         paste that MAC into the web lobby's VEHICLES table so the
-         master can target it with a CAR,.. swap.
+         paste that MAC into the web lobby's roster so the master can
+         target it with a CAR,.. swap.
    ================================================================ */
 
 #include <WiFi.h>
@@ -21,8 +24,17 @@
 #include <ESP32Servo.h>
 
 /* ---------- Pin map ---------- */
-static const int PIN_STEER = 18;  // D18 — steering servo signal
-static const int PIN_ESC   = 19;  // D19 — ESC / drive motor signal
+static const int PIN_STEER   = 18;  // D18 — steering servo signal
+static const int PIN_ESC     = 19;  // D19 — ESC / drive motor signal
+static const int PIN_BATTERY = 34;  // ADC1 — battery sense via divider (optional)
+
+/* ---------- Battery sense (optional) ----------
+   Wire the pack through a divider into PIN_BATTERY so the pin never exceeds
+   ~3.3 V. Set the ratio to (Vbattery / Vpin). Example: 2S (8.4V max) through
+   a 100k/33k divider -> ratio ~4.03. Leave as-is if you don't wire a divider
+   (it will just report a meaningless/zero voltage). */
+static const float BATTERY_DIVIDER = 4.03f;
+static const bool  BATTERY_ENABLED = false; // set true once a divider is wired
 
 /* ---------- ESC pulse calibration (microseconds) ---------- */
 static const int ESC_MIN_US     = 1000; // full reverse
@@ -35,12 +47,17 @@ static const int ESC_MAX_US     = 2000; // full forward
 /* ---------- Failsafe ---------- */
 static const uint32_t FAILSAFE_MS = 500; // cut throttle if no frame for this long
 
-/* ---------- Wire format (must match the transmitter exactly) ---------- */
+/* ---------- Wire formats (must match the transmitter exactly) ---------- */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
   int16_t  motor;   // -255..255  (negative = reverse, 0 = stop)
   uint32_t seq;     // rolling sequence
 } DriveFrame;
+
+typedef struct __attribute__((packed)) {
+  uint16_t vbat_mv; // battery millivolts (0 if unmeasured)
+  int8_t   rssi;    // dBm the car heard from the master
+} TelemetryFrame;
 
 /* ---------- Actuators & state ---------- */
 Servo steering;
@@ -51,6 +68,11 @@ static volatile int16_t  rxMotor   = 0;    // default: stopped (signed, -255..25
 static volatile uint32_t lastRxMs  = 0;
 static volatile uint32_t lastSeq   = 0;
 static volatile bool     haveFrame = false;
+static volatile int8_t   lastRssi  = 0;
+
+static uint8_t  masterMac[6] = {0};
+static bool     haveMaster   = false;
+static uint32_t lastTelemMs  = 0;
 
 /* ---------- ESP-NOW receive callback (Arduino-ESP32 3.x signature) ---------- */
 static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
@@ -63,6 +85,32 @@ static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
   lastSeq   = frame.seq;
   lastRxMs  = millis();
   haveFrame = true;
+  if (info->rx_ctrl) lastRssi = info->rx_ctrl->rssi;
+
+  // Learn the master's MAC on first contact so we can send telemetry back.
+  if (!haveMaster) {
+    memcpy(masterMac, info->src_addr, 6);
+    esp_now_peer_info_t peer = {};
+    memcpy(peer.peer_addr, masterMac, 6);
+    peer.channel = 0; peer.encrypt = false; peer.ifidx = WIFI_IF_STA;
+    if (esp_now_add_peer(&peer) == ESP_OK) haveMaster = true;
+  }
+}
+
+/* Read battery voltage in millivolts (0 if sensing disabled). */
+static uint16_t readBatteryMv() {
+  if (!BATTERY_ENABLED) return 0;
+  int raw = analogReadMilliVolts(PIN_BATTERY); // pin millivolts (ADC calibrated)
+  return (uint16_t) constrain((int)(raw * BATTERY_DIVIDER), 0, 65535);
+}
+
+/* Send battery + RSSI back to the master (which relays to the browser). */
+static void sendTelemetry() {
+  if (!haveMaster) return;
+  TelemetryFrame t;
+  t.vbat_mv = readBatteryMv();
+  t.rssi    = lastRssi;
+  esp_now_send(masterMac, (uint8_t *) &t, sizeof(t));
 }
 
 /* Apply the latest command to the physical outputs. */
@@ -121,6 +169,12 @@ void loop() {
     applyFailsafe();
     haveFrame = false;
     Serial.println("FAILSAFE,LINK_LOST");
+  }
+
+  // Heartbeat telemetry back to the master (~5 Hz).
+  if (haveMaster && (now - lastTelemMs) >= 200) {
+    lastTelemMs = now;
+    sendTelemetry();
   }
 
   delay(5); // ~200 Hz servicing; ESP-NOW callback captures every frame regardless

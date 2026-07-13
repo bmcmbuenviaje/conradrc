@@ -17,12 +17,18 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 
-/* ---------- Wire format shared with the receiver ---------- */
+/* ---------- Wire formats shared with the receiver ---------- */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
   int16_t  motor;   // -255..255  (negative = reverse, 0 = stop)
   uint32_t seq;     // rolling sequence for loss/latency diagnostics
 } DriveFrame;
+
+// Sent BY the car BACK to the master (car battery + link quality).
+typedef struct __attribute__((packed)) {
+  uint16_t vbat_mv; // battery millivolts (0 if unmeasured)
+  int8_t   rssi;    // dBm the car heard from the master
+} TelemetryFrame;
 
 /* ---------- State ---------- */
 static uint8_t   currentPeer[6] = {0};
@@ -41,10 +47,24 @@ static void printMac(const uint8_t *mac) {
 }
 
 // ESP-NOW send-status callback (Arduino-ESP32 3.x signature).
+// Emits "ACK,<seq>,OK|FAIL" so the browser can measure latency + packet loss.
 static void onDataSent(const wifi_tx_info_t *info, esp_now_send_status_t status) {
-  // Emit a terse telemetry line the browser read-loop can display.
   Serial.print("ACK,");
+  Serial.print(txSeq);
+  Serial.print(',');
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "OK" : "FAIL");
+}
+
+// ESP-NOW receive callback — relays the car's telemetry to the browser as
+// "TELEM,<millivolts>,<rssi>". (Arduino-ESP32 3.x signature.)
+static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (len != sizeof(TelemetryFrame)) return;
+  TelemetryFrame t;
+  memcpy(&t, data, sizeof(t));
+  Serial.print("TELEM,");
+  Serial.print(t.vbat_mv);
+  Serial.print(',');
+  Serial.println(t.rssi);
 }
 
 /* Swap (or refresh) the single active peer from six hex byte tokens. */
@@ -170,6 +190,7 @@ void setup() {
     ESP.restart();
   }
   esp_now_register_send_cb(onDataSent);
+  esp_now_register_recv_cb(onDataRecv);
 
   Serial.print("READY,MASTER,");
   Serial.println(WiFi.macAddress());
