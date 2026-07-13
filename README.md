@@ -69,6 +69,25 @@ The whole control chain is browser → USB → radio → car:
 
 **Rule of thumb:** if the board accepts **standard servo-PWM signals**, it works. If it has an **integrated radio receiver** you can't feed, it doesn't.
 
+### Wiring diagrams
+
+<table>
+<tr>
+<td align="center" width="50%">
+<b>Hobby-grade</b> — servo + ESC<br>
+<sub>flash <code>car_receiver.ino</code></sub>
+</td>
+<td align="center" width="50%">
+<b>Toy-grade</b> — dual H-bridge (TB6612 / DRV8833 / L298N)<br>
+<sub>flash <code>car_receiver_toygrade.ino</code></sub>
+</td>
+</tr>
+<tr>
+<td><img src="docs/wiring.svg" alt="Hobby-grade wiring" width="100%"></td>
+<td><img src="docs/wiring_toygrade.svg" alt="Toy-grade wiring" width="100%"></td>
+</tr>
+</table>
+
 ---
 
 ## 🔧 Hardware you need
@@ -251,9 +270,7 @@ git push
 | **GND** | Servo GND **and** ESC GND | Common ground (required) |
 | **5 V / VIN** | *From BEC/ESC, not from USB* | Power for the ESP32 |
 
-<p align="center">
-  <img src="docs/wiring.svg" alt="RC car receiver wiring: ESP32 GPIO18 to steering servo, GPIO19 to ESC/motor, common ground bus, BEC power" width="720">
-</p>
+See the [wiring diagrams](#-chassis-compatibility) above for both hobby-grade and toy-grade layouts.
 
 **Failsafe behavior:** if the car stops receiving frames for **500 ms**, the receiver centers the steering (90°) and cuts the throttle to neutral automatically. This is defined by `FAILSAFE_MS` in the receiver firmware.
 

@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 640" font-family="Segoe UI, Rajdhani, system-ui, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0f1a"/><stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#123024"/><stop offset="1" stop-color="#0a1f18"/>
+    </linearGradient>
+    <linearGradient id="hbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1a3c"/><stop offset="1" stop-color="#170e24"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#e8f0ff"/>
+    </marker>
+    <style>
+      .lbl   { fill:#e8f0ff; font-size:14px; }
+      .lbl-s { fill:#7f8db0; font-size:11px; letter-spacing:1px; }
+      .neon  { fill:#00e5ff; font-size:12px; letter-spacing:2px; text-transform:uppercase; }
+      .title { fill:#e8f0ff; font-size:22px; font-weight:800; letter-spacing:3px; }
+      .accent{ fill:#00e5ff; }
+      .mag   { fill:#ff2e97; }
+      .lime  { fill:#b6ff00; }
+      .amber { fill:#ffb020; }
+      .wire  { fill:none; stroke-width:3.5; }
+      .pin   { fill:#04060a; font-size:11px; font-weight:700; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="940" height="640" rx="18" fill="url(#bg)" stroke="rgba(0,229,255,0.25)"/>
+  <text x="34" y="46" class="title">TOY-GRADE <tspan class="accent">RC</tspan> WIRING</text>
+  <text x="34" y="70" class="lbl-s">ESP32 · TB6612FNG DUAL H-BRIDGE · DRIVE MOTOR + STEER MOTOR · COMMON GROUND</text>
+
+  <!-- ============ ESP32 board (left) ============ -->
+  <g>
+    <rect x="70" y="150" width="260" height="360" rx="12" fill="url(#board)" stroke="#1e7a5a" stroke-width="2"/>
+    <rect x="106" y="138" width="188" height="16" rx="3" fill="#2a2f3a"/>
+    <text x="200" y="180" text-anchor="middle" class="lbl" font-weight="800" font-size="18">ESP32</text>
+    <text x="200" y="198" text-anchor="middle" class="lbl-s">MAIN BOARD (CAR SIDE)</text>
+
+    <!-- pins (right side of ESP32) -->
+    <g>
+      <rect x="330" y="230" width="14" height="14" fill="#00e5ff"/><text x="322" y="241" text-anchor="end" class="lbl">GPIO 25 · AIN1</text>
+      <rect x="330" y="255" width="14" height="14" fill="#00e5ff"/><text x="322" y="266" text-anchor="end" class="lbl">GPIO 26 · AIN2</text>
+      <rect x="330" y="280" width="14" height="14" fill="#00e5ff"/><text x="322" y="291" text-anchor="end" class="lbl">GPIO 27 · PWMA</text>
+
+      <rect x="330" y="320" width="14" height="14" fill="#b6ff00"/><text x="322" y="331" text-anchor="end" class="lbl">GPIO 32 · BIN1</text>
+      <rect x="330" y="345" width="14" height="14" fill="#b6ff00"/><text x="322" y="356" text-anchor="end" class="lbl">GPIO 33 · BIN2</text>
+      <rect x="330" y="370" width="14" height="14" fill="#b6ff00"/><text x="322" y="381" text-anchor="end" class="lbl">GPIO 14 · PWMB</text>
+
+      <rect x="330" y="410" width="14" height="14" fill="#ffb020"/><text x="322" y="421" text-anchor="end" class="lbl">GPIO 13 · STBY</text>
+    </g>
+    <!-- left-side pins (power) -->
+    <g>
+      <rect x="56" y="230" width="14" height="14" fill="#ff2e97"/><text x="78" y="241" class="lbl">VIN / 5V</text>
+      <rect x="56" y="470" width="14" height="14" fill="#e8f0ff"/><text x="78" y="481" class="lbl">GND</text>
+    </g>
+  </g>
+
+  <!-- ============ H-bridge (middle) ============ -->
+  <g>
+    <rect x="430" y="150" width="260" height="360" rx="12" fill="url(#hbg)" stroke="#8a55c4" stroke-width="2"/>
+    <text x="560" y="180" text-anchor="middle" class="lbl" font-weight="800" font-size="18">TB6612FNG</text>
+    <text x="560" y="198" text-anchor="middle" class="lbl-s">DUAL H-BRIDGE (or DRV8833 / L298N)</text>
+
+    <!-- input pins (left of H-bridge) -->
+    <g>
+      <rect x="416" y="230" width="14" height="14" fill="#00e5ff"/><text x="438" y="241" class="lbl">AIN1</text>
+      <rect x="416" y="255" width="14" height="14" fill="#00e5ff"/><text x="438" y="266" class="lbl">AIN2</text>
+      <rect x="416" y="280" width="14" height="14" fill="#00e5ff"/><text x="438" y="291" class="lbl">PWMA</text>
+      <rect x="416" y="320" width="14" height="14" fill="#b6ff00"/><text x="438" y="331" class="lbl">BIN1</text>
+      <rect x="416" y="345" width="14" height="14" fill="#b6ff00"/><text x="438" y="356" class="lbl">BIN2</text>
+      <rect x="416" y="370" width="14" height="14" fill="#b6ff00"/><text x="438" y="381" class="lbl">PWMB</text>
+      <rect x="416" y="410" width="14" height="14" fill="#ffb020"/><text x="438" y="421" class="lbl">STBY</text>
+    </g>
+    <!-- output pins (right of H-bridge) -->
+    <g>
+      <rect x="690" y="240" width="14" height="14" fill="#00e5ff"/><text x="682" y="251" text-anchor="end" class="lbl">AO1</text>
+      <rect x="690" y="265" width="14" height="14" fill="#00e5ff"/><text x="682" y="276" text-anchor="end" class="lbl">AO2</text>
+      <rect x="690" y="330" width="14" height="14" fill="#b6ff00"/><text x="682" y="341" text-anchor="end" class="lbl">BO1</text>
+      <rect x="690" y="355" width="14" height="14" fill="#b6ff00"/><text x="682" y="366" text-anchor="end" class="lbl">BO2</text>
+      <!-- power pins (right side, bottom) -->
+      <rect x="690" y="420" width="14" height="14" fill="#ff2e97"/><text x="682" y="431" text-anchor="end" class="lbl">VM (batt+)</text>
+      <rect x="690" y="445" width="14" height="14" fill="#ff2e97"/><text x="682" y="456" text-anchor="end" class="lbl">VCC (5V)</text>
+      <rect x="690" y="470" width="14" height="14" fill="#e8f0ff"/><text x="682" y="481" text-anchor="end" class="lbl">GND</text>
+    </g>
+
+    <!-- ESP -> H-bridge wires (short bus) -->
+    <path class="wire" stroke="#00e5ff" d="M344,237 H416"/>
+    <path class="wire" stroke="#00e5ff" d="M344,262 H416"/>
+    <path class="wire" stroke="#00e5ff" d="M344,287 H416"/>
+    <path class="wire" stroke="#b6ff00" d="M344,327 H416"/>
+    <path class="wire" stroke="#b6ff00" d="M344,352 H416"/>
+    <path class="wire" stroke="#b6ff00" d="M344,377 H416"/>
+    <path class="wire" stroke="#ffb020" d="M344,417 H416"/>
+  </g>
+
+  <!-- ============ Drive motor (top right) ============ -->
+  <g>
+    <rect x="770" y="200" width="140" height="90" rx="10" fill="#0b1f36" stroke="#00e5ff" stroke-width="2"/>
+    <text x="840" y="232" text-anchor="middle" class="neon">Drive</text>
+    <text x="840" y="252" text-anchor="middle" class="lbl">DC Motor</text>
+    <text x="840" y="274" text-anchor="middle" class="lbl-s">PWM · fwd/rev/brake</text>
+  </g>
+  <path class="wire" stroke="#00e5ff" d="M704,247 H770" marker-end="url(#arrow)"/>
+  <path class="wire" stroke="#00e5ff" d="M704,272 H745 V255" opacity="0.7"/>
+
+  <!-- ============ Steering motor (bottom right) ============ -->
+  <g>
+    <rect x="770" y="320" width="140" height="90" rx="10" fill="#152a08" stroke="#b6ff00" stroke-width="2"/>
+    <text x="840" y="352" text-anchor="middle" class="neon" fill="#b6ff00">Steer</text>
+    <text x="840" y="372" text-anchor="middle" class="lbl">DC Motor</text>
+    <text x="840" y="394" text-anchor="middle" class="lbl-s">bang-bang L / C / R</text>
+  </g>
+  <path class="wire" stroke="#b6ff00" d="M704,337 H770" marker-end="url(#arrow)"/>
+  <path class="wire" stroke="#b6ff00" d="M704,362 H745 V352" opacity="0.7"/>
+
+  <!-- ============ Battery / BEC (top left area) ============ -->
+  <g>
+    <rect x="70" y="60" width="200" height="70" rx="10" fill="#241226" stroke="#ff2e97" stroke-width="2"/>
+    <text x="170" y="92" text-anchor="middle" class="neon" fill="#ff2e97">Battery Pack</text>
+    <text x="170" y="114" text-anchor="middle" class="lbl-s">to VM (motors) + BEC 5V to ESP32/VCC</text>
+  </g>
+  <!-- Batt -> H-bridge VM and to ESP32 VIN -->
+  <path class="wire" stroke="#ff2e97" d="M270,95 H710 V420" marker-end="url(#arrow)"/>
+  <path class="wire" stroke="#ff2e97" d="M63,95 V237 H56" marker-end="url(#arrow)"/>
+  <text x="290" y="88" class="mag" font-size="11">+ VM (motor rail)</text>
+  <text x="12" y="180" class="mag" font-size="11" transform="rotate(-90 40 200)">+5V (BEC → ESP32)</text>
+
+  <!-- 5V line to H-bridge VCC -->
+  <path class="wire" stroke="#ff2e97" d="M63,95 V445 H690" opacity="0.55"/>
+
+  <!-- ============ Common ground bus ============ -->
+  <g>
+    <line x1="63" y1="580" x2="877" y2="580" stroke="#e8f0ff" stroke-width="4"/>
+    <text x="470" y="612" text-anchor="middle" class="lbl-s">COMMON GROUND BUS — ESP32 · H-BRIDGE · BATTERY · BOTH MOTORS SHARE GND</text>
+    <path class="wire" stroke="#e8f0ff" d="M63,477 V580"/>
+    <path class="wire" stroke="#e8f0ff" d="M697,477 V580"/>
+    <path class="wire" stroke="#e8f0ff" d="M170,130 V580" opacity="0.55"/>
+    <path class="wire" stroke="#e8f0ff" d="M840,290 V580" opacity="0.6"/>
+    <path class="wire" stroke="#e8f0ff" d="M840,410 V580" opacity="0.6"/>
+    <circle cx="63" cy="580" r="5" fill="#e8f0ff"/>
+    <circle cx="170" cy="580" r="5" fill="#e8f0ff"/>
+    <circle cx="697" cy="580" r="5" fill="#e8f0ff"/>
+    <circle cx="840" cy="580" r="5" fill="#e8f0ff"/>
+  </g>
+
+  <text x="34" y="632" class="lbl-s" fill="#ffb020">⚠ Steering is bang-bang (L/C/R) unless you also swap in a real servo — front-end springs re-center on release.  ·  STBY must be pulled HIGH to enable the TB6612.</text>
+</svg>
