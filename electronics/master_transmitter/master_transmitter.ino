@@ -40,6 +40,13 @@ static const bool     ENABLE_CRYPTO = false;
 static const uint8_t  PMK[16] = { 'R','C','A','R','C','A','D','E','_','P','M','K','_','_','_','1' };
 static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K','_','_','_','1' };
 
+/* ---------- Long Range (LR) mode ----------
+   ESP-NOW LR uses a lower-bitrate modulation designed for extended range.
+   Typical gain: 1.5-3x range. Costs ~5-10 ms of extra latency. MUST be
+   enabled on BOTH the master and every car — mixing LR and normal
+   modes means one side can't hear the other. Set to false to disable. */
+static const bool     ENABLE_LR_MODE = true;
+
 /* ---------- Wire formats shared with the receiver ---------- */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
@@ -240,6 +247,13 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
+
+  // Enable ESP-NOW Long Range mode for extended reach. Must match on the car.
+  if (ENABLE_LR_MODE) {
+    esp_wifi_set_protocol(WIFI_IF_STA,
+      WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G |
+      WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+  }
 
   if (esp_now_init() != ESP_OK) {
     Serial.println("ERR,ESPNOW_INIT");

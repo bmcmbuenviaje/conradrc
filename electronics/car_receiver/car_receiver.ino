@@ -24,6 +24,7 @@
 
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include <ESP32Servo.h>
 #include <esp_system.h>
 #include <esp_mac.h>
@@ -32,6 +33,12 @@
 static const bool     ENABLE_CRYPTO = false;
 static const uint8_t  PMK[16] = { 'R','C','A','R','C','A','D','E','_','P','M','K','_','_','_','1' };
 static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K','_','_','_','1' };
+
+/* ---------- Long Range (LR) mode (must match master) ----------
+   ESP-NOW LR uses a lower-bitrate modulation for extended range (~1.5-3x
+   gain, ~5-10 ms extra latency). MUST be identical on master and every
+   car — mixing LR and normal means one side can't hear the other. */
+static const bool     ENABLE_LR_MODE = true;
 
 /* ---------- Pin map ---------- */
 static const int PIN_STEER   = 18;  // D18 — steering servo signal
@@ -159,6 +166,11 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
+  if (ENABLE_LR_MODE) {
+    esp_wifi_set_protocol(WIFI_IF_STA,
+      WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G |
+      WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+  }
   if (esp_now_init() != ESP_OK) { Serial.println("ERR,ESPNOW_INIT"); ESP.restart(); }
   if (ENABLE_CRYPTO) esp_now_set_pmk(PMK);
   esp_now_register_recv_cb(onDataRecv);

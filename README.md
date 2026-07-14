@@ -313,6 +313,7 @@ With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← 
 - **Race Timer** — Start/Lap/Reset with best-lap tracking.
 - **Multi-cabinet presence (real, cross-machine)** — each master ESP32 broadcasts its current claim over ESP-NOW every second; other masters relay foreign claims to their browser as `CLAIM,<masterMac>,<carMac>`, and the grid shows **⚠ IN USE** on cars driven by another cabinet. (There's also a `BroadcastChannel` fallback for same-origin browser presence.)
 - **Optional ESP-NOW encryption** — set `ENABLE_CRYPTO=true` + matching PMK/LMK on the master and every car to authenticate + encrypt the DriveFrames. Presence broadcasts stay unencrypted by design.
+- **Long Range (LR) mode** — `ENABLE_LR_MODE=true` (default) puts ESP-NOW into its extended-range modulation. Typical gain: 1.5–3× range at the cost of ~5–10 ms extra latency. **Must be identical on the master and every car** — mixing LR and normal-mode ESP32s means they can't hear each other. Set to `false` on all sketches if you'd rather trade range for latency (e.g. for racing rather than crawling).
 - **Install / offline** — it's a PWA; install it for kiosk use and it runs offline (control needs the USB transmitter, of course).
 - **In-browser smoke tests** — open [test.html](test.html) to run ~40 assertions across the calibration/drivetrain/safety/telemetry paths in a hidden iframe. Green means "no regressions."
 
