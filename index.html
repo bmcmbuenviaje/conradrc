@@ -156,16 +156,6 @@
     .hud .br { bottom: 52px; right: 0; text-align: right; }
     .hud .label { color: var(--neon-cyan); text-transform: uppercase; letter-spacing: 2px; font-size: 10px; }
     .hud .val { font-size: 20px; font-weight: 700; }
-    .hud .reticle {
-      position: absolute; top: 50%; left: 50%; width: 46px; height: 46px;
-      transform: translate(-50%,-50%);
-      border: 1px solid rgba(0,229,255,0.5); border-radius: 50%;
-    }
-    .hud .reticle::before, .hud .reticle::after {
-      content:''; position:absolute; background: rgba(0,229,255,0.5);
-    }
-    .hud .reticle::before { left:50%; top:-10px; width:1px; height:66px; transform:translateX(-50%); }
-    .hud .reticle::after  { top:50%; left:-10px; height:1px; width:66px; transform:translateY(-50%); }
     .hud .telem-bad .val { color: var(--bad); }
     .hud .telem-ok .val  { color: var(--neon-lime); }
     /* RPM shift-light strip + big gear indicator */
@@ -446,6 +436,14 @@
             How hard the motor brakes when you lift off / downshift (0 = coast only). Each gear caps top speed. Bind shift up/down to controller buttons in <b>Test &amp; Map Controls</b>.
           </p>
         </div>
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--stroke);">
+          <div class="slider-head"><span>Throttle Floor</span><b id="thrMinVal">0%</b></div>
+          <input type="range" id="thrMinSlider" min="0" max="80" step="1" value="0" />
+          <div class="hint">Minimum motor output when the pedal is pressed. Raise this if your brushless ESC needs a kick before it spins (typical 10–20%).</div>
+          <div class="slider-head" style="margin-top:10px;"><span>Throttle Expo</span><b id="thrExpoVal">0%</b></div>
+          <input type="range" id="thrExpoSlider" min="-100" max="100" step="10" value="0" />
+          <div class="hint">Response curve. + softens low end (fine control near zero, punchier top end). − sharpens (aggressive off-idle).</div>
+        </div>
         <button id="btnSound" style="margin-top:12px;">🔈 Engine Sound: OFF</button>
         <button id="btnCalibrate" style="margin-top:10px;">🛠 Calibrate ESC</button>
       </section>
@@ -564,7 +562,6 @@
             <div class="label">Throttle</div>
             <div class="val" id="hudThrottle">0</div>
           </div>
-          <div class="reticle"></div>
         </div>
         <button class="vp-btn" id="btnFullscreen" title="Toggle fullscreen">⛶ Fullscreen</button>
         <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
@@ -789,6 +786,8 @@
     powerLimit: 100,          // % cap on top speed (10..100)
     transmission: 'auto',     // 'auto' | 'manual'
     engBrake: 100,            // engine-braking strength (0..150 %), manual only
+    throttleMin: 0,           // motor floor (0..80 % of full PWM) when throttle > 0 — fixes brushless start-threshold
+    throttleExpo: 0,          // throttle curve, % (-100..100; + softens center, - sharpens)
     trim: 0,                  // steering trim, degrees added to center (-30..30)
     epa: 100,                 // steering endpoint / travel, % (50..100)
     expo: 0,                  // steering expo, % (-100..100; + softens center)
@@ -932,18 +931,39 @@
     let a = Math.max(-1, Math.min(1, axis * ratio));
     if (cc.invertSteer) a = -a;
     const k = (cc.expo || 0) / 100;                 // +softer center, -sharper
-    a = (1 - Math.abs(k)) * a + k * a * a * a;
+    // Signed-expo formula (preserves ±1 endpoints for both signs of k).
+    a = (1 - k) * a + k * a * a * a;
     a *= (cc.epa ?? 100) / 100;                      // travel limit
     let deg = Math.round((a + 1) * 90) + (cc.trim || 0);
     return Math.max(0, Math.min(180, deg));
   }
   // Throttle pedal -> 0..255 with dead-zone cutoff to stop motor creep.
-  function pedalToPwm(axisRaw, rest, deadzone) {
+  // Also applies throttleExpo (like steering expo) to reshape the pedal response curve.
+  function pedalToPwm(axisRaw, rest, deadzone, expo) {
     let press = rest === 'neg' ? (axisRaw + 1) / 2 : axisRaw;
     press = Math.max(0, Math.min(1, press));
+    // Optional throttle expo: +expo softens the low-end, -expo sharpens it.
+    // Formula preserves the endpoints (press=1 stays 1, press=0 stays 0).
+    const k = (expo || 0) / 100;
+    if (k !== 0) {
+      press = (1 - k) * press + k * press * press * press;
+      press = Math.max(0, Math.min(1, press));
+    }
     let pwm = Math.round(press * 255);
     if (pwm <= deadzone) pwm = 0;
     return pwm;
+  }
+
+  // Throttle floor: ensures a nonzero motor command is at least `throttleMin`% of full,
+  // in either direction. Fixes the "brushless doesn't spin until X% throttle" problem.
+  // Does not affect motor=0 (still full stop).
+  function applyThrottleFloor(motor) {
+    if (motor === 0) return 0;
+    const floor = Math.round(((state.controls.throttleMin || 0) / 100) * 255);
+    if (floor === 0) return motor;
+    if (motor > 0 && motor < floor) return floor;
+    if (motor < 0 && motor > -floor) return -floor;
+    return motor;
   }
   // Fraction of full power allowed by the current gearbox state.
   //  - automatic: full range (1.0)
@@ -1260,6 +1280,8 @@
     if (typeof t.powerLimit === 'number') c.powerLimit = t.powerLimit;
     if (t.transmission) c.transmission = t.transmission;
     if (typeof t.engBrake === 'number') c.engBrake = t.engBrake;
+    if (typeof t.throttleMin === 'number') c.throttleMin = t.throttleMin;
+    if (typeof t.throttleExpo === 'number') c.throttleExpo = t.throttleExpo;
     if (typeof t.trim === 'number') c.trim = t.trim;
     if (typeof t.epa === 'number') c.epa = t.epa;
     if (typeof t.expo === 'number') c.expo = t.expo;
@@ -1476,7 +1498,7 @@
     let servo = 90, base = 0;
     if (input) {
       servo = computeSteer(input.steerAxis);
-      base = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone);
+      base = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone, state.controls.throttleExpo);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
 
@@ -1488,6 +1510,9 @@
       state.vspeed = Math.abs(motor) / 255;    // keep sim in sync for smooth mode switches
       state.rpm = manual ? state.vspeed / Math.max(activeGearCaps()[state.gear - 1] / 100, 0.001) : 0;
     }
+    // Apply throttle floor last: ensures the ESC actually spins the motor when
+    // the pipeline output is non-zero but below the ESC's start threshold.
+    motor = applyThrottleFloor(motor);
 
     // ---- Safety gate: nothing drives unless armed; E-STOP fully neutralizes ----
     if (state.estop) { servo = 90; motor = 0; state.vspeed = 0; }
@@ -1625,6 +1650,16 @@
     saveControls();
     updateDrivetrainUI();
   }
+  function setThrottleMin(pct) {
+    state.controls.throttleMin = Math.max(0, Math.min(80, pct | 0));
+    saveControls();
+    updateDrivetrainUI();
+  }
+  function setThrottleExpo(pct) {
+    state.controls.throttleExpo = Math.max(-100, Math.min(100, pct | 0));
+    saveControls();
+    updateDrivetrainUI();
+  }
   function updateDrivetrainUI() {
     $('powerVal').textContent = state.controls.powerLimit + '%';
     $('powerSlider').value = state.controls.powerLimit;
@@ -1636,6 +1671,11 @@
     $('gearCap').textContent = activeGearCaps()[state.gear - 1] + '%';
     $('engBrakeVal').textContent = state.controls.engBrake + '%';
     $('engBrakeSlider').value = state.controls.engBrake;
+    $('thrMinVal').textContent = (state.controls.throttleMin || 0) + '%';
+    $('thrMinSlider').value = state.controls.throttleMin || 0;
+    const te = state.controls.throttleExpo || 0;
+    $('thrExpoVal').textContent = (te > 0 ? '+' : '') + te + '%';
+    $('thrExpoSlider').value = te;
     const rev = $('btnReverse');
     rev.classList.toggle('on', state.reverse);
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
@@ -1732,7 +1772,7 @@
      ================================================================= */
   function currentThrottleBase() {
     const input = readGamepad() || readKeyboard();
-    return input ? pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone) : 0;
+    return input ? pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone, state.controls.throttleExpo) : 0;
   }
   function setArmed(on) {
     if (on) {
@@ -1994,7 +2034,7 @@
     const thrAxis = pad.axes[thrSel] ?? (($('mapRest').value === 'neg') ? -1 : 0);
     const dz = parseInt($('mapDeadzone').value, 10) || 0;
     const servo = axisToServo(steerAxis);
-    const motor = scaleMotor(pedalToPwm(thrAxis, $('mapRest').value, dz));
+    const motor = applyThrottleFloor(scaleMotor(pedalToPwm(thrAxis, $('mapRest').value, dz, state.controls.throttleExpo)));
     $('mapPreview').textContent = `SERVO ${servo}° · MOTOR ${motor}`;
   }
 
@@ -2182,6 +2222,8 @@
     // Drivetrain controls
     $('powerSlider').addEventListener('input', (e) => setPowerLimit(parseInt(e.target.value, 10)));
     $('engBrakeSlider').addEventListener('input', (e) => setEngineBrake(parseInt(e.target.value, 10)));
+    $('thrMinSlider').addEventListener('input', (e) => setThrottleMin(parseInt(e.target.value, 10)));
+    $('thrExpoSlider').addEventListener('input', (e) => setThrottleExpo(parseInt(e.target.value, 10)));
     document.querySelectorAll('#transSeg button').forEach((b) =>
       b.addEventListener('click', () => setTransmission(b.dataset.trans)));
     $('btnReverse').addEventListener('click', toggleReverse);

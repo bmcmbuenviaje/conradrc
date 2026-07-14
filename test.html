@@ -78,6 +78,29 @@ async function run() {
   assert('270 wheel 1:1 axis 1 = 180', eq(w.computeSteer(1), 180));
   ctx.c.wheelRange = 900; ctx.c.lockRange = 900;
 
+  // Throttle floor (applyThrottleFloor) — brushless start-threshold compensation
+  ctx.c.throttleMin = 20; // ~51 raw units at 20%
+  assert('applyThrottleFloor 0 stays 0', w.applyThrottleFloor(0) === 0);
+  assert('applyThrottleFloor +10 -> +51 floor', w.applyThrottleFloor(10) === 51);
+  assert('applyThrottleFloor +200 unchanged', w.applyThrottleFloor(200) === 200);
+  assert('applyThrottleFloor -10 -> -51 floor', w.applyThrottleFloor(-10) === -51);
+  ctx.c.throttleMin = 0;
+  assert('applyThrottleFloor 0% no floor', w.applyThrottleFloor(10) === 10);
+
+  // setThrottleMin clamps
+  w.setThrottleMin(50);   assert('setThrottleMin 50', ctx.c.throttleMin === 50);
+  w.setThrottleMin(-10);  assert('setThrottleMin clamp low', ctx.c.throttleMin === 0);
+  w.setThrottleMin(999);  assert('setThrottleMin clamp high 80', ctx.c.throttleMin === 80);
+  ctx.c.throttleMin = 0;
+
+  // Throttle expo shapes response — +50 makes 0.5 press feel weaker, -50 makes it feel stronger
+  const straight = w.pedalToPwm(0, 'neg', 5, 0);       // 128
+  const softer   = w.pedalToPwm(0, 'neg', 5, 50);      // should be < 128
+  const sharper  = w.pedalToPwm(0, 'neg', 5, -50);     // should be > 128
+  assert('throttleExpo +50 softens mid press', softer < straight);
+  assert('throttleExpo -50 sharpens mid press', sharper > straight);
+  assert('throttleExpo endpoints unchanged', w.pedalToPwm(-1, 'neg', 5, 50) === 0 && w.pedalToPwm(1, 'neg', 5, 50) === 255);
+
   // Haptic gain clamps
   w.setHapticGain(75);  assert('setHapticGain 75', ctx.c.hapticGain === 75);
   w.setHapticGain(999); assert('setHapticGain clamp upper -> 150', ctx.c.hapticGain === 150);
