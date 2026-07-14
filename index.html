@@ -459,6 +459,46 @@
         <div class="slider-head" style="margin-top:10px;"><span>Expo</span><b id="expoVal">0%</b></div>
         <input type="range" id="expoSlider" min="-100" max="100" step="10" value="0" />
         <button id="btnInvertSteer" class="rev" style="margin-top:12px;">⇄ Invert Steering: OFF</button>
+
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--stroke);">
+          <div class="field-row" style="gap:10px;margin-bottom:6px;">
+            <div class="field" style="margin-bottom:0;">
+              <label for="wheelRangeSel">Wheel Range</label>
+              <select id="wheelRangeSel">
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="270">270° (arcade)</option>
+                <option value="360">360°</option>
+                <option value="540">540°</option>
+                <option value="720">720°</option>
+                <option value="900" selected>900° (sim)</option>
+                <option value="1080">1080°</option>
+              </select>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="lockRangeSel">Full-Lock at</label>
+              <select id="lockRangeSel">
+                <option value="90">90°</option>
+                <option value="180">180°</option>
+                <option value="270">270°</option>
+                <option value="360">360°</option>
+                <option value="540">540°</option>
+                <option value="720">720°</option>
+                <option value="900" selected>900°</option>
+              </select>
+            </div>
+          </div>
+          <div class="hint" id="wheelRatioHint">Ratio 1.00× — spin the wheel the full amount to reach servo lock.</div>
+        </div>
+
+        <div class="slider-head" style="margin-top:14px;"><span>Force Feedback</span><b id="hapticVal">100%</b></div>
+        <input type="range" id="hapticSlider" min="0" max="150" step="10" value="100" />
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="btnHapticTest" class="btn-sm">▶ Test Rumble</button>
+        </div>
+        <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5">
+          Rumble pulses on E-STOP, redline, and low-battery. 0% disables. Requires a wheel/pad with haptic actuator (Chrome).
+        </p>
       </section>
 
       <section class="panel">
@@ -753,6 +793,9 @@
     epa: 100,                 // steering endpoint / travel, % (50..100)
     expo: 0,                  // steering expo, % (-100..100; + softens center)
     invertSteer: false,       // flip steering direction
+    wheelRange: 900,          // physical wheel rotation the driver is configured for, in degrees
+    lockRange: 900,           // physical wheel rotation to reach full servo lock (<= wheelRange for faster steering)
+    hapticGain: 100,          // force-feedback / rumble strength (0..150 %)
     lowBattV: 7.0,            // low-battery warning threshold (volts)
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
@@ -873,10 +916,20 @@
     const c = Math.max(-1, Math.min(1, axis));
     return Math.round((c + 1) * 90);
   }
-  // Full steering pipeline: invert -> expo -> endpoint (EPA) -> map -> trim.
+  // Full steering pipeline:
+  //   wheel-range ratio -> invert -> expo -> endpoint (EPA) -> map -> trim
+  //
+  // Wheel-range ratio: the driver reports axis = ±1 at ±(wheelRange/2)° of physical
+  // rotation. If the user wants full servo lock at a SMALLER physical rotation
+  // (e.g. a 900° sim wheel but only 270° of usable travel), we scale the axis up
+  // by wheelRange / lockRange before the rest of the pipeline. Result: same
+  // servo output at less wheel deflection = sharper steering.
   function computeSteer(axis) {
     const cc = state.controls;
-    let a = Math.max(-1, Math.min(1, axis));
+    const wr = cc.wheelRange || 900;
+    const lr = cc.lockRange  || wr;
+    const ratio = wr / lr;                          // >= 1 means quicker steering
+    let a = Math.max(-1, Math.min(1, axis * ratio));
     if (cc.invertSteer) a = -a;
     const k = (cc.expo || 0) / 100;                 // +softer center, -sharper
     a = (1 - Math.abs(k)) * a + k * a * a * a;
@@ -1595,6 +1648,24 @@
   function setEpa(v)   { state.controls.epa = Math.max(50, Math.min(100, v | 0)); saveControls(); updateTuneUI(); }
   function setExpo(v)  { state.controls.expo = Math.max(-100, Math.min(100, v | 0)); saveControls(); updateTuneUI(); }
   function toggleInvertSteer() { state.controls.invertSteer = !state.controls.invertSteer; saveControls(); updateTuneUI(); }
+  function setWheelRange(v) {
+    const wr = Math.max(30, Math.min(1440, v | 0));
+    state.controls.wheelRange = wr;
+    // If the user picks a wheelRange smaller than the current lockRange, clamp lockRange down.
+    if (state.controls.lockRange > wr) state.controls.lockRange = wr;
+    saveControls(); updateTuneUI();
+  }
+  function setLockRange(v) {
+    const wr = state.controls.wheelRange || 900;
+    // Lock range can't exceed the wheel's total rotation.
+    state.controls.lockRange = Math.max(30, Math.min(wr, v | 0));
+    saveControls(); updateTuneUI();
+  }
+  function setHapticGain(v) {
+    state.controls.hapticGain = Math.max(0, Math.min(150, v | 0));
+    saveControls(); updateTuneUI();
+  }
+  function testRumble() { rumble(0.6, 0.6, 250); }
   function updateTuneUI() {
     const c = state.controls;
     $('trimVal').textContent = (c.trim > 0 ? '+' : '') + c.trim + '°';
@@ -1606,6 +1677,17 @@
     const b = $('btnInvertSteer');
     b.classList.toggle('on', c.invertSteer);
     b.textContent = '⇄ Invert Steering: ' + (c.invertSteer ? 'ON' : 'OFF');
+    // Wheel range + lock range + FFB gain
+    $('wheelRangeSel').value = String(c.wheelRange || 900);
+    $('lockRangeSel').value = String(c.lockRange || c.wheelRange || 900);
+    const ratio = (c.wheelRange || 900) / (c.lockRange || c.wheelRange || 900);
+    $('wheelRatioHint').textContent = ratio > 1.02
+      ? 'Ratio ' + ratio.toFixed(2) + '× — only ' + c.lockRange + '° of the ' + c.wheelRange + '° wheel reaches full servo lock. Sharper steering.'
+      : ratio < 0.98
+        ? 'Ratio ' + ratio.toFixed(2) + '× — invalid; lock range exceeds wheel range.'
+        : 'Ratio 1.00× — the full ' + c.wheelRange + '° of the wheel maps 1:1 to servo lock.';
+    $('hapticVal').textContent = (c.hapticGain ?? 100) + '%';
+    $('hapticSlider').value = c.hapticGain ?? 100;
   }
 
   /* =================================================================
@@ -2049,10 +2131,15 @@
     const pad = state.padIndex !== null ? navigator.getGamepads()[state.padIndex] : null;
     const act = pad?.vibrationActuator;
     if (!act) return;
+    const gain = (state.controls.hapticGain ?? 100) / 100;
+    if (gain <= 0) return;                       // FFB off entirely
     const now = performance.now();
-    if (now - state.lastHaptic < 100) return; // debounce
+    if (now - state.lastHaptic < 100) return;    // debounce
     state.lastHaptic = now;
-    try { act.playEffect('dual-rumble', { duration: ms, strongMagnitude: strong, weakMagnitude: weak }); } catch (_) {}
+    // Cap magnitudes at 1.0 even if the user cranks past 100%.
+    const s = Math.max(0, Math.min(1, strong * gain));
+    const w = Math.max(0, Math.min(1, weak * gain));
+    try { act.playEffect('dual-rumble', { duration: ms, strongMagnitude: s, weakMagnitude: w }); } catch (_) {}
   }
   function updateHaptics() {
     // Redline pulse
@@ -2109,6 +2196,10 @@
     $('epaSlider').addEventListener('input', (e) => setEpa(parseInt(e.target.value, 10)));
     $('expoSlider').addEventListener('input', (e) => setExpo(parseInt(e.target.value, 10)));
     $('btnInvertSteer').addEventListener('click', toggleInvertSteer);
+    $('wheelRangeSel').addEventListener('change', (e) => setWheelRange(parseInt(e.target.value, 10)));
+    $('lockRangeSel').addEventListener('change', (e) => setLockRange(parseInt(e.target.value, 10)));
+    $('hapticSlider').addEventListener('input', (e) => setHapticGain(parseInt(e.target.value, 10)));
+    $('btnHapticTest').addEventListener('click', testRumble);
     updateTuneUI();
 
     // Race timer
