@@ -1510,9 +1510,11 @@
       state.vspeed = Math.abs(motor) / 255;    // keep sim in sync for smooth mode switches
       state.rpm = manual ? state.vspeed / Math.max(activeGearCaps()[state.gear - 1] / 100, 0.001) : 0;
     }
-    // Apply throttle floor last: ensures the ESC actually spins the motor when
-    // the pipeline output is non-zero but below the ESC's start threshold.
-    motor = applyThrottleFloor(motor);
+    // Apply throttle floor last, but ONLY when the driver is actually pressing
+    // the pedal. This ensures the ESC actually spins when it should, without
+    // amplifying tiny sim-brake pulses that fire when the pedal is released
+    // (which would lurch the car backward at every coast/downshift).
+    if (base > state.controls.deadzone) motor = applyThrottleFloor(motor);
 
     // ---- Safety gate: nothing drives unless armed; E-STOP fully neutralizes ----
     if (state.estop) { servo = 90; motor = 0; state.vspeed = 0; }

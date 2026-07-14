@@ -520,7 +520,10 @@ The Import dialog accepts an array of vehicle objects. **Only `name` and `mac` a
     "tune": {                    // OPTIONAL — applied when this car is selected
       "powerLimit": 60,          // 10..100, max-power cap %
       "transmission": "manual",  // "auto" | "manual"
-      "engBrake":  120,          // 0..150, engine-brake strength %
+      "engBrake":     120,       // 0..150, engine-brake strength %
+      "throttleMin":   15,       // 0..80, motor floor % when the pedal is pressed
+                                 //   (fixes brushless "won't spin below X %" — leave 0 for brushed)
+      "throttleExpo":  30,       // -100..100, pedal response curve; + softens low end
       "trim":       -3,          // -30..30, steering trim degrees (center offset)
       "epa":        90,          // 50..100, steering endpoint %
       "expo":      -20,          // -100..100, steering expo

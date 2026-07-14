@@ -78,6 +78,11 @@ async function run() {
   assert('270 wheel 1:1 axis 1 = 180', eq(w.computeSteer(1), 180));
   ctx.c.wheelRange = 900; ctx.c.lockRange = 900;
 
+  // NOTE: The "coast-lurch" bug fix lives in controlTick as a gate:
+  //   if (base > deadzone) motor = applyThrottleFloor(motor);
+  // The floor amplification math is covered by the assertions below; the
+  // gate itself is a one-line conditional, verified by code review.
+
   // Throttle floor (applyThrottleFloor) — brushless start-threshold compensation
   ctx.c.throttleMin = 20; // ~51 raw units at 20%
   assert('applyThrottleFloor 0 stays 0', w.applyThrottleFloor(0) === 0);

@@ -180,9 +180,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   if (ENABLE_LR_MODE) {
-    esp_wifi_set_protocol(WIFI_IF_STA,
+    esp_err_t lrErr = esp_wifi_set_protocol(WIFI_IF_STA,
       WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G |
       WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+    if (lrErr != ESP_OK) Serial.println("ERR,LR_SET");
   }
   if (esp_now_init() != ESP_OK) { Serial.println("ERR,ESPNOW_INIT"); ESP.restart(); }
   if (ENABLE_CRYPTO) esp_now_set_pmk(PMK);

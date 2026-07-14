@@ -250,9 +250,10 @@ void setup() {
 
   // Enable ESP-NOW Long Range mode for extended reach. Must match on the car.
   if (ENABLE_LR_MODE) {
-    esp_wifi_set_protocol(WIFI_IF_STA,
+    esp_err_t lrErr = esp_wifi_set_protocol(WIFI_IF_STA,
       WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G |
       WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+    if (lrErr != ESP_OK) Serial.println("ERR,LR_SET");
   }
 
   if (esp_now_init() != ESP_OK) {
