@@ -1184,8 +1184,13 @@
     log('TX ▸ CAR swap → ' + vehicle.mac, 'tx');
   }
   function sendDrive(servoDeg, motorPwm) {
+    // Send every tick (~50 Hz). We used to dedup identical packets, but that
+    // caused the car's 500 ms failsafe to fire whenever the driver held the
+    // pedal and wheel steady — the car would stop and center every ~half
+    // second and resume only when analog jitter changed the value. USB serial
+    // at 115200 baud has 15x the headroom we need, so sending unconditionally
+    // is both cheaper (in complexity) and more reliable.
     const packet = `DRIVE,${servoDeg},${motorPwm}\n`;
-    if (packet === state.lastSent) return;
     state.lastSent = packet;
     state.lastDriveAt = performance.now(); // for latency measurement via ACK
     serialWrite(packet);
