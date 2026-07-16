@@ -83,6 +83,26 @@ async function run() {
   // The floor amplification math is covered by the assertions below; the
   // gate itself is a one-line conditional, verified by code review.
 
+  // Lighting bitflag values must exactly match the receiver firmware.
+  const RC = w.__rc;
+  assert('LIGHT_HEAD = 0x01',     RC.LIGHT_HEAD     === 0x01);
+  assert('LIGHT_HIGHBEAM = 0x02', RC.LIGHT_HIGHBEAM === 0x02);
+  assert('LIGHT_LEFT = 0x04',     RC.LIGHT_LEFT     === 0x04);
+  assert('LIGHT_RIGHT = 0x08',    RC.LIGHT_RIGHT    === 0x08);
+  assert('LIGHT_BRAKE = 0x10',    RC.LIGHT_BRAKE    === 0x10);
+  assert('LIGHT_REVERSE = 0x20',  RC.LIGHT_REVERSE  === 0x20);
+  assert('LIGHT_HORN = 0x40',     RC.LIGHT_HORN     === 0x40);
+
+  // Signal toggles: turning one on cancels the other.
+  ctx.s.lights.leftSignal = false; ctx.s.lights.rightSignal = false;
+  RC.toggleSignal('left');  assert('toggleSignal left on', ctx.s.lights.leftSignal && !ctx.s.lights.rightSignal);
+  RC.toggleSignal('right'); assert('toggleSignal right cancels left', ctx.s.lights.rightSignal && !ctx.s.lights.leftSignal);
+  RC.toggleSignal('right'); assert('toggleSignal right off', !ctx.s.lights.rightSignal);
+
+  // Hazard toggles both.
+  RC.toggleHazard(); assert('toggleHazard on', ctx.s.lights.leftSignal && ctx.s.lights.rightSignal);
+  RC.toggleHazard(); assert('toggleHazard off', !ctx.s.lights.leftSignal && !ctx.s.lights.rightSignal);
+
   // Throttle floor (applyThrottleFloor) — brushless start-threshold compensation
   ctx.c.throttleMin = 20; // ~51 raw units at 20%
   assert('applyThrottleFloor 0 stays 0', w.applyThrottleFloor(0) === 0);

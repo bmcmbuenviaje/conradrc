@@ -67,12 +67,31 @@ static const int      STEER_DUTY  = 255;   // bang-bang steering is full-on
 static const uint32_t FAILSAFE_MS = 500;
 static const uint32_t MIN_RX_INTERVAL_MS = 4; // rate-limit
 
-/* ---------- Wire formats (must match the transmitter) ---------- */
+/* ---------- Wire formats (must match the transmitter) ----------
+   DriveFrame v2: adds a lights bitfield. Same as the hobby-grade
+   receiver — see car_receiver.ino for the bit layout. */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180 (quantized to L/C/R here)
   int16_t  motor;   // -255..255 (negative = reverse)
+  uint8_t  lights;  // bitfield
   uint32_t seq;
 } DriveFrame;
+
+static const uint8_t LIGHT_HEAD     = 0x01;
+static const uint8_t LIGHT_HIGHBEAM = 0x02;
+static const uint8_t LIGHT_LEFT     = 0x04;
+static const uint8_t LIGHT_RIGHT    = 0x08;
+static const uint8_t LIGHT_BRAKE    = 0x10;
+static const uint8_t LIGHT_REVERSE  = 0x20;
+static const uint8_t LIGHT_HORN     = 0x40;
+
+// This variant accepts the lights byte on the wire (so it stays protocol-
+// compatible with the master + browser) but does not drive any light pins by
+// default. If you wire LEDs on your toy chassis, copy the PIN_HEADLIGHT /
+// PIN_BRAKELIGHT / PIN_SIGNAL_L / PIN_SIGNAL_R / PIN_REVERSE_LIGHT /
+// PIN_HORN block AND the updateLights() function from car_receiver.ino
+// (hobby-grade), pick free GPIOs (avoid the 7 already used by the H-bridge),
+// and call updateLights() from loop().
 
 typedef struct __attribute__((packed)) {
   uint16_t vbat_mv;
@@ -84,6 +103,7 @@ typedef struct __attribute__((packed)) {
 /* ---------- State ---------- */
 static volatile uint8_t  rxServo   = 90;
 static volatile int16_t  rxMotor   = 0;
+static volatile uint8_t  rxLights  = 0;
 static volatile uint32_t lastRxMs  = 0;
 static volatile bool     haveFrame = false;
 static volatile int8_t   lastRssi  = 0;
@@ -134,6 +154,7 @@ static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
   memcpy(&frame, data, sizeof(frame));
   rxServo  = constrain(frame.servo, 0, 180);
   rxMotor  = constrain(frame.motor, -255, 255);
+  rxLights = frame.lights;
   lastRxMs = now;
   haveFrame = true;
   if (info->rx_ctrl) lastRssi = info->rx_ctrl->rssi;

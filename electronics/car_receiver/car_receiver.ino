@@ -41,9 +41,19 @@ static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K
 static const bool     ENABLE_LR_MODE = true;
 
 /* ---------- Pin map ---------- */
-static const int PIN_STEER   = 18;  // D18 — steering servo signal
-static const int PIN_ESC     = 19;  // D19 — ESC / drive motor signal
-static const int PIN_BATTERY = 34;  // ADC1 — battery sense via divider (optional)
+static const int PIN_STEER       = 18;  // D18 — steering servo signal
+static const int PIN_ESC         = 19;  // D19 — ESC / drive motor signal
+static const int PIN_BATTERY     = 34;  // ADC1 — battery sense via divider (optional)
+
+// Lighting outputs — leave unwired if you don't have that light.
+// Drive small LEDs directly through a ~330 ohm resistor.
+// For anything brighter (headlight arrays, brake bars): use a MOSFET.
+static const int PIN_HEADLIGHT   = 22;  // white LEDs, front
+static const int PIN_BRAKELIGHT  = 23;  // red LEDs, rear
+static const int PIN_SIGNAL_L    = 21;  // amber LED, front-left + rear-left
+static const int PIN_SIGNAL_R    = 5;   // amber LED, front-right + rear-right
+static const int PIN_REVERSE_LIGHT = 4; // white LEDs, rear
+static const int PIN_HORN        = 25;  // piezo buzzer or siren MOSFET
 
 /* ---------- Battery sense (optional) ---------- */
 static const float BATTERY_DIVIDER = 4.03f;
@@ -59,11 +69,25 @@ static const uint32_t FAILSAFE_MS         = 500; // cut throttle if no frame for
 static const uint32_t MIN_RX_INTERVAL_MS  = 4;   // reject > ~250 Hz burst frames
 
 /* ---------- Wire formats (must match the transmitter exactly) ---------- */
+// DriveFrame v2: adds a lights bitfield (previously ended at seq).
+// Bits: 0=headlight  1=highbeam/flash  2=leftSignal  3=rightSignal
+//       4=brake      5=reverseLight    6=horn        7=aux (reserved)
 typedef struct __attribute__((packed)) {
   uint8_t  servo;
   int16_t  motor;
+  uint8_t  lights;
   uint32_t seq;
 } DriveFrame;
+
+/* Light bitflags (shared with master + browser). */
+static const uint8_t LIGHT_HEAD     = 0x01;
+static const uint8_t LIGHT_HIGHBEAM = 0x02;
+static const uint8_t LIGHT_LEFT     = 0x04;
+static const uint8_t LIGHT_RIGHT    = 0x08;
+static const uint8_t LIGHT_BRAKE    = 0x10;
+static const uint8_t LIGHT_REVERSE  = 0x20;
+static const uint8_t LIGHT_HORN     = 0x40;
+static const uint8_t LIGHT_AUX      = 0x80;
 
 typedef struct __attribute__((packed)) {
   uint16_t vbat_mv;
@@ -78,6 +102,7 @@ Servo esc;
 
 static volatile uint8_t  rxServo    = 90;
 static volatile int16_t  rxMotor    = 0;
+static volatile uint8_t  rxLights   = 0;
 static volatile uint32_t lastRxMs   = 0;
 static volatile uint32_t lastSeq    = 0;
 static volatile bool     haveFrame  = false;
@@ -121,6 +146,7 @@ static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
 
   rxServo   = constrain(frame.servo, 0, 180);
   rxMotor   = constrain(frame.motor, -255, 255);
+  rxLights  = frame.lights;
   lastSeq   = frame.seq;
   lastRxMs  = now;
   haveFrame = true;
@@ -143,9 +169,30 @@ static void applyOutputs() {
   esc.writeMicroseconds(us);
 }
 static void applyFailsafe() {
-  rxMotor = 0;
+  rxMotor  = 0;
+  rxLights = LIGHT_BRAKE;   // keep brake lights on during failsafe as a visual "stopped" cue
   steering.write(90);
   esc.writeMicroseconds(ESC_NEUTRAL_US);
+}
+
+/* Update the LED / horn outputs based on rxLights. Blinker runs off millis()
+   so the flashing rate is deterministic and doesn't stutter with network jitter. */
+static void updateLights() {
+  static uint32_t lastToggle = 0;
+  static bool     blinkOn    = false;
+  const uint32_t now = millis();
+  if (now - lastToggle >= 350) { lastToggle = now; blinkOn = !blinkOn; } // ~1.4 Hz
+
+  const uint8_t L = rxLights;
+  const bool leftOn  = (L & LIGHT_LEFT)  && blinkOn;
+  const bool rightOn = (L & LIGHT_RIGHT) && blinkOn;
+
+  digitalWrite(PIN_HEADLIGHT,     (L & (LIGHT_HEAD | LIGHT_HIGHBEAM)) ? HIGH : LOW);
+  digitalWrite(PIN_BRAKELIGHT,    (L & LIGHT_BRAKE)   ? HIGH : LOW);
+  digitalWrite(PIN_SIGNAL_L,      leftOn              ? HIGH : LOW);
+  digitalWrite(PIN_SIGNAL_R,      rightOn             ? HIGH : LOW);
+  digitalWrite(PIN_REVERSE_LIGHT, (L & LIGHT_REVERSE) ? HIGH : LOW);
+  digitalWrite(PIN_HORN,          (L & LIGHT_HORN)    ? HIGH : LOW);
 }
 
 void setup() {
@@ -162,7 +209,17 @@ void setup() {
   esc.setPeriodHertz(50);
   steering.attach(PIN_STEER, 500, 2500);
   esc.attach(PIN_ESC, 1000, 2000);
+
+  // Light outputs (safe defaults — off)
+  pinMode(PIN_HEADLIGHT,     OUTPUT); digitalWrite(PIN_HEADLIGHT,     LOW);
+  pinMode(PIN_BRAKELIGHT,    OUTPUT); digitalWrite(PIN_BRAKELIGHT,    LOW);
+  pinMode(PIN_SIGNAL_L,      OUTPUT); digitalWrite(PIN_SIGNAL_L,      LOW);
+  pinMode(PIN_SIGNAL_R,      OUTPUT); digitalWrite(PIN_SIGNAL_R,      LOW);
+  pinMode(PIN_REVERSE_LIGHT, OUTPUT); digitalWrite(PIN_REVERSE_LIGHT, LOW);
+  pinMode(PIN_HORN,          OUTPUT); digitalWrite(PIN_HORN,          LOW);
+
   applyFailsafe();
+  updateLights();
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -199,6 +256,8 @@ void loop() {
     failsafeCt++;
     Serial.println("FAILSAFE,LINK_LOST");
   }
+  // Update lights every loop iteration so blinkers stay smooth.
+  updateLights();
 
   // Heartbeat telemetry back to the master (~5 Hz).
   if (haveMaster && (now - lastTelemMs) >= 200) {

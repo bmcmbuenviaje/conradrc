@@ -47,10 +47,14 @@ static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K
    modes means one side can't hear the other. Set to false to disable. */
 static const bool     ENABLE_LR_MODE = true;
 
-/* ---------- Wire formats shared with the receiver ---------- */
+/* ---------- Wire formats shared with the receiver ----------
+   DriveFrame v2: added a lights bitfield. Bits:
+     0=head  1=highbeam  2=leftSignal  3=rightSignal
+     4=brake 5=reverseLight  6=horn  7=aux (reserved) */
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
   int16_t  motor;   // -255..255  (negative = reverse, 0 = stop)
+  uint8_t  lights;  // bitfield — see comment above
   uint32_t seq;     // rolling sequence for loss/latency diagnostics
 } DriveFrame;
 
@@ -184,21 +188,29 @@ static void handleCar(char *args) {
 }
 
 static void handleDrive(char *args) {
+  // Format: DRIVE,<servo>,<motor>[,<lights>]
+  //   servo:  0..180
+  //   motor:  -255..255
+  //   lights: 0..255 bitfield (optional; older browsers omit -> defaults to 0)
   char *sTok = strtok(args, ",");
   char *mTok = strtok(nullptr, ",");
+  char *lTok = strtok(nullptr, ",");
   if (!sTok || !mTok) { Serial.println("ERR,DRIVE_LEN"); return; }
 
   int servo = atoi(sTok);
   int motor = atoi(mTok);
+  int lights = lTok ? atoi(lTok) : 0;
   servo = constrain(servo, 0, 180);
   motor = constrain(motor, -255, 255);
+  lights = constrain(lights, 0, 255);
 
   if (!peerActive) { Serial.println("ERR,NO_TARGET"); return; }
 
   DriveFrame frame;
-  frame.servo = (uint8_t) servo;
-  frame.motor = (int16_t) motor;
-  frame.seq   = ++txSeq;
+  frame.servo  = (uint8_t) servo;
+  frame.motor  = (int16_t) motor;
+  frame.lights = (uint8_t) lights;
+  frame.seq    = ++txSeq;
   esp_now_send(currentPeer, (uint8_t *) &frame, sizeof(frame));
 }
 

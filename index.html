@@ -652,6 +652,17 @@
               <button id="qsReverse" class="rev">◄ Reverse: OFF</button>
               <button id="qsSound">🔈 Sound: OFF</button>
             </div>
+            <div class="qs-row" style="border-top:1px dashed var(--stroke); padding-top:10px;">
+              <label>Lights</label>
+              <div class="qs-btns" style="margin-bottom:6px;">
+                <button id="qsLightHead">💡 Headlights: OFF</button>
+                <button id="qsLightHazard">⚠ Hazard: OFF</button>
+              </div>
+              <div class="qs-btns">
+                <button id="qsLightLeft">◄ Left: OFF</button>
+                <button id="qsLightRight">Right ►: OFF</button>
+              </div>
+            </div>
             <div class="qs-row">
               <button id="qsToggleHotkeys" class="btn-sm" style="width:100%;">⌨ Hotkeys…</button>
             </div>
@@ -915,6 +926,14 @@
     floorDown:    { label: 'Throttle Floor −5%',        fn: () => setThrottleMin((state.controls.throttleMin || 0) - 5) },
     engBrakeUp:   { label: 'Engine Brake +10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) + 10) },
     engBrakeDown: { label: 'Engine Brake −10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) - 10) },
+    // ---- Lights ----
+    headlights:   { label: 'Headlights toggle',         fn: () => toggleLight('head') },
+    highbeamFlash:{ label: 'High-beam flash (2 s)',     fn: () => pulseLight('highbeam', 2000) },
+    leftSignal:   { label: 'Left signal toggle',        fn: () => toggleSignal('left') },
+    rightSignal:  { label: 'Right signal toggle',       fn: () => toggleSignal('right') },
+    hazard:       { label: 'Hazard lights toggle',      fn: () => toggleHazard() },
+    horn:         { label: 'Horn (1 s pulse)',          fn: () => pulseLight('horn', 1000) },
+    brakeManual:  { label: 'Brake-light hold (300 ms)', fn: () => pulseLight('brakeManual', 300) },
   };
   const DEFAULT_HOTKEYS = {
     arm: 'Enter',      estop: ' ',       reverse: 'r',
@@ -925,6 +944,9 @@
     powerUp: '=',      powerDown: '-',
     floorUp: '.',      floorDown: ',',
     engBrakeUp: 'PageUp', engBrakeDown: 'PageDown',
+    headlights: 'h',      highbeamFlash: 'g',
+    leftSignal: 'j',      rightSignal: 'l',
+    hazard: 'x',          horn: 'z',          brakeManual: 'b',
   };
   function activeHotkeys() {
     return { ...DEFAULT_HOTKEYS, ...(state.controls.hotkeys || {}) };
@@ -987,6 +1009,12 @@
     lastHaptic: 0, wasRedline: false, wasLowBatt: false,
     // ---- Hotkey capture (temporary while user picks a new key for an action) ----
     hkCapture: null,
+    // ---- Lights: manual toggles (brake + reverse are automatic in controlTick) ----
+    lights: {
+      head: false, highbeam: false,
+      leftSignal: false, rightSignal: false,
+      brakeManual: false, horn: false,
+    },
     // ---- Keyboard driving fallback ----
     keys: {},
     // ---- Engine sound (WebAudio) ----
@@ -1315,18 +1343,24 @@
     serialWrite(`CAR,${octets}\n`);
     log('TX ▸ CAR swap → ' + vehicle.mac, 'tx');
   }
-  function sendDrive(servoDeg, motorPwm) {
-    // Send every tick (~50 Hz). We used to dedup identical packets, but that
-    // caused the car's 500 ms failsafe to fire whenever the driver held the
-    // pedal and wheel steady — the car would stop and center every ~half
-    // second and resume only when analog jitter changed the value. USB serial
-    // at 115200 baud has 15x the headroom we need, so sending unconditionally
-    // is both cheaper (in complexity) and more reliable.
-    const packet = `DRIVE,${servoDeg},${motorPwm}\n`;
+  function sendDrive(servoDeg, motorPwm, lights) {
+    // Send every tick (~50 Hz). See earlier notes on why we don't dedup.
+    // The lights byte is a bitfield — see LIGHT_* constants below.
+    const packet = `DRIVE,${servoDeg},${motorPwm},${lights|0}\n`;
     state.lastSent = packet;
     state.lastDriveAt = performance.now(); // for latency measurement via ACK
     serialWrite(packet);
   }
+
+  /* Lighting bitflags — mirror the receiver firmware exactly. */
+  const LIGHT_HEAD     = 0x01;
+  const LIGHT_HIGHBEAM = 0x02;
+  const LIGHT_LEFT     = 0x04;
+  const LIGHT_RIGHT    = 0x08;
+  const LIGHT_BRAKE    = 0x10;
+  const LIGHT_REVERSE  = 0x20;
+  const LIGHT_HORN     = 0x40;
+  const LIGHT_AUX      = 0x80;
 
   /* =================================================================
      VEHICLE GRID
@@ -1659,7 +1693,24 @@
 
     state.lastSteer = servo;
     state.lastMotor = motor;
-    if (selected()) sendDrive(servo, motor);
+
+    // ---- Compute the light bitfield ----
+    let lights = 0;
+    const L = state.lights;
+    if (L.head)         lights |= LIGHT_HEAD;
+    if (L.highbeam)     lights |= (LIGHT_HEAD | LIGHT_HIGHBEAM);
+    if (L.leftSignal)   lights |= LIGHT_LEFT;
+    if (L.rightSignal)  lights |= LIGHT_RIGHT;
+    if (L.horn)         lights |= LIGHT_HORN;
+    // Automatic brake light: motor commanding brake/reverse, or coasting from speed
+    // with the pedal released, or user manually holding the brake-light key.
+    const brakingByMotor = (!state.reverse && motor < 0);
+    const brakingByCoast = (base <= state.controls.deadzone && state.vspeed > 0.05 && !state.reverse);
+    if (L.brakeManual || brakingByMotor || brakingByCoast) lights |= LIGHT_BRAKE;
+    // Automatic reverse light: reverse engaged AND actually asking for power.
+    if (state.reverse && base > state.controls.deadzone) lights |= LIGHT_REVERSE;
+
+    if (selected()) sendDrive(servo, motor, lights);
     updateEngineSound();
     paintHud(servo, motor);
   }
@@ -1847,6 +1898,53 @@
     saveControls(); updateTuneUI();
   }
   function testRumble() { rumble(0.6, 0.6, 250); }
+
+  /* =================================================================
+     LIGHTS — front headlights, brake, indicators, hazard, reverse, horn
+     ================================================================= */
+  function toggleLight(name) {
+    state.lights[name] = !state.lights[name];
+    syncLightsUI();
+    log('Lights: ' + name + ' → ' + (state.lights[name] ? 'ON' : 'OFF'));
+  }
+  function pulseLight(name, ms) {
+    state.lights[name] = true;
+    syncLightsUI();
+    setTimeout(() => { state.lights[name] = false; syncLightsUI(); }, ms);
+  }
+  // Signals: turning on one automatically clears the other (car turn signals aren't hazard).
+  function toggleSignal(side) {
+    if (side === 'left') {
+      state.lights.leftSignal = !state.lights.leftSignal;
+      if (state.lights.leftSignal) state.lights.rightSignal = false;
+    } else {
+      state.lights.rightSignal = !state.lights.rightSignal;
+      if (state.lights.rightSignal) state.lights.leftSignal = false;
+    }
+    syncLightsUI();
+  }
+  // Hazard is both signals on at once (car firmware blinks them in sync).
+  function toggleHazard() {
+    const on = !(state.lights.leftSignal && state.lights.rightSignal);
+    state.lights.leftSignal = on;
+    state.lights.rightSignal = on;
+    syncLightsUI();
+    log('Hazard: ' + (on ? 'ON' : 'OFF'));
+  }
+  function syncLightsUI() {
+    // Refresh drawer button states if the drawer is open.
+    if (!$('qsDrawer')?.classList.contains('open')) return;
+    const L = state.lights;
+    const set = (id, on, labelOn, labelOff) => {
+      const b = $(id); if (!b) return;
+      b.classList.toggle('on', !!on);
+      b.textContent = on ? labelOn : labelOff;
+    };
+    set('qsLightHead',   L.head,        '💡 Headlights: ON',  '💡 Headlights: OFF');
+    set('qsLightLeft',   L.leftSignal,  '◄ Left: ON',         '◄ Left: OFF');
+    set('qsLightRight',  L.rightSignal, 'Right ►: ON',        'Right ►: OFF');
+    set('qsLightHazard', L.leftSignal && L.rightSignal, '⚠ Hazard: ON', '⚠ Hazard: OFF');
+  }
   function updateTuneUI() {
     const c = state.controls;
     $('trimVal').textContent = (c.trim > 0 ? '+' : '') + c.trim + '°';
@@ -1941,7 +2039,11 @@
   function safetyHold(reason) {
     if (state.armed) { state.armed = false; forceNeutral(); log('Failsafe: ' + reason + ' → disarmed.', 'err'); updateSafetyUI(); }
   }
-  function forceNeutral() { if (selected()) sendDrive(90, 0); paintHud(90, 0); }
+  function forceNeutral() {
+    // Neutral servo + zero motor. Light brake up so onlookers see the car is intentionally stopped.
+    if (selected()) sendDrive(90, 0, LIGHT_BRAKE);
+    paintHud(90, 0);
+  }
   function updateSafetyUI() {
     const b = $('btnArm');
     const st = state.estop ? 'E-STOP' : state.armed ? 'ARMED' : 'DISARMED';
@@ -2048,6 +2150,8 @@
     $('qsReverse').textContent = state.reverse ? '◄ Reverse: ON' : '◄ Reverse: OFF';
     $('qsSound').classList.toggle('on', !!c.sound);
     $('qsSound').textContent = c.sound ? '🔊 Sound: ON' : '🔈 Sound: OFF';
+    // Light buttons
+    syncLightsUI();
   }
 
   /* =================================================================
@@ -2461,6 +2565,10 @@
     $('qsEng').addEventListener('input',    (e) => setEngineBrake(parseInt(e.target.value, 10)));
     $('qsReverse').addEventListener('click', toggleReverse);
     $('qsSound').addEventListener('click', toggleSound);
+    $('qsLightHead').addEventListener('click',   () => toggleLight('head'));
+    $('qsLightLeft').addEventListener('click',   () => toggleSignal('left'));
+    $('qsLightRight').addEventListener('click',  () => toggleSignal('right'));
+    $('qsLightHazard').addEventListener('click', toggleHazard);
     document.querySelectorAll('#qsTransSeg button').forEach((b) =>
       b.addEventListener('click', () => setTransmission(b.dataset.trans)));
     $('qsToggleHotkeys').addEventListener('click', () => {
@@ -2614,7 +2722,12 @@
   boot();
 
   // Expose internals for the in-browser test harness (test.html). Never referenced by the app itself.
-  window.__rc = { get state() { return state; } };
+  window.__rc = {
+    get state() { return state; },
+    LIGHT_HEAD, LIGHT_HIGHBEAM, LIGHT_LEFT, LIGHT_RIGHT,
+    LIGHT_BRAKE, LIGHT_REVERSE, LIGHT_HORN, LIGHT_AUX,
+    toggleLight, pulseLight, toggleSignal, toggleHazard,
+  };
   </script>
 </body>
 </html>
