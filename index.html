@@ -328,6 +328,52 @@
     }
     .vp-stop:hover { box-shadow:0 0 22px rgba(255,77,94,0.7); }
     .vp-snap { left:auto; right:12px; transform:none; bottom:12px; padding:8px 12px; }
+    .vp-cog  { left:auto; right:56px; transform:none; bottom:12px; padding:8px 12px; }
+
+    /* ---------- Quick Settings drawer (lives inside the viewport) ---------- */
+    .qs-drawer {
+      position:absolute; top:12px; right:12px; z-index:8;
+      width: 320px; max-height: calc(100% - 24px); overflow-y:auto;
+      background: rgba(10, 15, 26, 0.92);
+      border: 1px solid var(--stroke); border-radius: 12px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+      transform: translateX(calc(100% + 20px)); opacity:0;
+      transition: transform 0.22s ease, opacity 0.22s ease;
+      pointer-events:auto;
+      font-size: 12px;
+    }
+    .qs-drawer.open { transform: translateX(0); opacity: 1; }
+    .qs-head {
+      display:flex; justify-content:space-between; align-items:center;
+      padding: 10px 12px; border-bottom: 1px solid var(--stroke);
+      font-size: 12px; text-transform: uppercase; letter-spacing:2px; color: var(--neon-cyan);
+    }
+    .qs-close { width:26px; height:26px; padding:0; border-radius:6px; font-size:12px; }
+    .qs-body { padding: 12px; }
+    .qs-row { margin-bottom: 10px; }
+    .qs-row label { display:flex; justify-content:space-between; font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color: var(--text-dim); margin-bottom:4px; }
+    .qs-row label b { color: var(--neon-lime); }
+    .qs-row input[type=range] { margin:0; }
+    .qs-row .seg { margin:0; }
+    .qs-btns { display:flex; gap:8px; }
+    .qs-btns button { padding: 8px; font-size: 11px; }
+    button.rev.on { border-color: var(--neon-amber); color: var(--neon-amber); }
+    button.on { border-color: var(--neon-lime); color: var(--neon-lime); }
+
+    /* Hotkeys sub-panel */
+    .qs-hotkeys { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--stroke); }
+    .hk-row { display:grid; grid-template-columns: 1fr auto auto; gap:6px; align-items:center; padding: 4px 0; font-size:11px; }
+    .hk-row .hk-label { color: var(--text); }
+    .hk-key {
+      min-width: 56px; padding: 3px 8px; text-align:center;
+      background: var(--bg-2); border: 1px solid var(--stroke); border-radius:5px;
+      font-family: Consolas, monospace; font-size:11px; color: var(--neon-cyan);
+    }
+    .hk-key.capture { background: var(--neon-amber); color:#04060a; border-color:var(--neon-amber); animation: pulse 0.8s infinite; }
+    .hk-bind { padding: 3px 8px; font-size:10px; width:auto; }
+    .qs-hotkeys .hk-actions { display:flex; gap:6px; margin-top:8px; }
+    .qs-hotkeys .hk-actions button { flex:1; padding:6px; font-size:10px; }
 
     /* ---------- Lap timer ---------- */
     .lap-current { font-size:34px; font-weight:800; text-align:center; color:var(--neon-cyan); font-variant-numeric:tabular-nums; letter-spacing:1px; }
@@ -565,7 +611,53 @@
         </div>
         <button class="vp-btn" id="btnFullscreen" title="Toggle fullscreen">⛶ Fullscreen</button>
         <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
+        <button class="vp-btn vp-cog" id="btnQuickSettings" title="Quick settings (Tab)">⚙</button>
         <button class="vp-stop" id="btnEstopHud" title="Emergency stop (Space)">■ STOP</button>
+
+        <!-- Quick Settings drawer — lives INSIDE the viewport so it stays visible in fullscreen. -->
+        <div class="qs-drawer" id="qsDrawer">
+          <div class="qs-head">
+            <span>Quick Settings</span>
+            <button class="qs-close" id="qsClose" title="Close (Tab or Esc)">✕</button>
+          </div>
+          <div class="qs-body" id="qsBody">
+            <div class="qs-row">
+              <label>Transmission</label>
+              <div class="seg qs-seg" id="qsTransSeg">
+                <button data-trans="auto">Auto</button>
+                <button data-trans="manual">Manual</button>
+              </div>
+            </div>
+            <div class="qs-row">
+              <label>Max Power <b id="qsPowerVal">100%</b></label>
+              <input type="range" id="qsPower" min="10" max="100" step="5" value="100" />
+            </div>
+            <div class="qs-row">
+              <label>Steer Trim <b id="qsTrimVal">0°</b></label>
+              <input type="range" id="qsTrim" min="-30" max="30" step="1" value="0" />
+            </div>
+            <div class="qs-row">
+              <label>EPA <b id="qsEpaVal">100%</b></label>
+              <input type="range" id="qsEpa" min="50" max="100" step="5" value="100" />
+            </div>
+            <div class="qs-row">
+              <label>Throttle Floor <b id="qsFloorVal">0%</b></label>
+              <input type="range" id="qsFloor" min="0" max="80" step="1" value="0" />
+            </div>
+            <div class="qs-row">
+              <label>Engine Brake <b id="qsEngVal">100%</b></label>
+              <input type="range" id="qsEng" min="0" max="150" step="10" value="100" />
+            </div>
+            <div class="qs-row qs-btns">
+              <button id="qsReverse" class="rev">◄ Reverse: OFF</button>
+              <button id="qsSound">🔈 Sound: OFF</button>
+            </div>
+            <div class="qs-row">
+              <button id="qsToggleHotkeys" class="btn-sm" style="width:100%;">⌨ Hotkeys…</button>
+            </div>
+            <div class="qs-hotkeys" id="qsHotkeys" hidden></div>
+          </div>
+        </div>
       </div>
       <canvas id="snapCanvas" style="display:none"></canvas>
 
@@ -798,7 +890,45 @@
     lowBattV: 7.0,            // low-battery warning threshold (volts)
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
+    hotkeys: null,            // keyboard hotkey map { action: keyString }; null uses defaults
   };
+
+  // Actions bindable to a keyboard hotkey. The `fn` reads from live state.
+  // Extend this list if you add a new setting you want to key-bind.
+  const HOTKEY_ACTIONS = {
+    arm:          { label: 'Arm / Disarm',              fn: () => setArmed(!state.armed) },
+    estop:        { label: 'E-STOP',                    fn: () => eStop() },
+    reverse:      { label: 'Reverse toggle',            fn: () => toggleReverse() },
+    shiftUp:      { label: 'Shift up',                  fn: () => shiftGear(+1) },
+    shiftDown:    { label: 'Shift down',                fn: () => shiftGear(-1) },
+    transmission: { label: 'Transmission (Auto/Manual)',fn: () => setTransmission(state.controls.transmission === 'manual' ? 'auto' : 'manual') },
+    engineSound:  { label: 'Engine sound toggle',       fn: () => toggleSound() },
+    fullscreen:   { label: 'Fullscreen toggle',         fn: () => toggleFullscreen() },
+    snapshot:     { label: 'FPV snapshot',              fn: () => snapshot() },
+    record:       { label: 'FPV record toggle',         fn: () => toggleRecording() },
+    settings:     { label: 'Quick Settings drawer',     fn: () => toggleQuickSettings() },
+    trimUp:       { label: 'Steering trim +',           fn: () => setTrim((state.controls.trim || 0) + 1) },
+    trimDown:     { label: 'Steering trim −',           fn: () => setTrim((state.controls.trim || 0) - 1) },
+    powerUp:      { label: 'Max Power +5%',             fn: () => setPowerLimit((state.controls.powerLimit || 100) + 5) },
+    powerDown:    { label: 'Max Power −5%',             fn: () => setPowerLimit((state.controls.powerLimit || 100) - 5) },
+    floorUp:      { label: 'Throttle Floor +5%',        fn: () => setThrottleMin((state.controls.throttleMin || 0) + 5) },
+    floorDown:    { label: 'Throttle Floor −5%',        fn: () => setThrottleMin((state.controls.throttleMin || 0) - 5) },
+    engBrakeUp:   { label: 'Engine Brake +10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) + 10) },
+    engBrakeDown: { label: 'Engine Brake −10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) - 10) },
+  };
+  const DEFAULT_HOTKEYS = {
+    arm: 'Enter',      estop: ' ',       reverse: 'r',
+    shiftUp: 'e',      shiftDown: 'q',   transmission: 't',
+    engineSound: 'm',  fullscreen: 'f',  snapshot: 'p',    record: 'v',
+    settings: 'Tab',
+    trimUp: ']',       trimDown: '[',
+    powerUp: '=',      powerDown: '-',
+    floorUp: '.',      floorDown: ',',
+    engBrakeUp: 'PageUp', engBrakeDown: 'PageDown',
+  };
+  function activeHotkeys() {
+    return { ...DEFAULT_HOTKEYS, ...(state.controls.hotkeys || {}) };
+  }
   // Per-gear top-speed cap, as % of Max Power. Index 0 = gear 1 ... index 5 = gear 6.
   // Vehicles can override this via `tune.gearCaps` (also 6 values).
   const GEAR_CAPS = [10, 20, 40, 60, 80, 100];
@@ -855,6 +985,8 @@
     stream: null, recorder: null, recording: false, recordedChunks: [], videoDevices: [],
     // ---- Haptics ----
     lastHaptic: 0, wasRedline: false, wasLowBatt: false,
+    // ---- Hotkey capture (temporary while user picks a new key for an action) ----
+    hkCapture: null,
     // ---- Keyboard driving fallback ----
     keys: {},
     // ---- Engine sound (WebAudio) ----
@@ -1686,6 +1818,8 @@
     const rev = $('btnReverse');
     rev.classList.toggle('on', state.reverse);
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
+    // Also sync the in-viewport quick drawer if it's open.
+    if ($('qsDrawer')?.classList.contains('open')) syncQuickSettings();
   }
 
   /* =================================================================
@@ -1735,6 +1869,8 @@
         : 'Ratio 1.00× — the full ' + c.wheelRange + '° of the wheel maps 1:1 to servo lock.';
     $('hapticVal').textContent = (c.hapticGain ?? 100) + '%';
     $('hapticSlider').value = c.hapticGain ?? 100;
+    // Sync the in-viewport quick drawer if it's open.
+    if ($('qsDrawer')?.classList.contains('open')) syncQuickSettings();
   }
 
   /* =================================================================
@@ -1816,6 +1952,102 @@
     badge.className = 'safety-badge ' + (state.estop ? 'estop' : state.armed ? 'armed' : 'idle');
     $('hudArm').textContent = st;
     $('hudArm').style.color = state.estop ? 'var(--bad)' : state.armed ? 'var(--ok)' : 'var(--text-dim)';
+  }
+
+  /* =================================================================
+     HOTKEYS — remappable keyboard shortcuts
+     ================================================================= */
+  // Normalize event → single key string. Letters are lowercased; special keys
+  // keep their canonical name (Enter, Tab, PageUp, ArrowLeft, ...); space is ' '.
+  function eventKey(e) {
+    if (!e || !e.key) return '';
+    if (e.key === ' ' || e.code === 'Space') return ' ';
+    return e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  }
+  function matchHotkey(e) {
+    const k = eventKey(e);
+    const map = activeHotkeys();
+    for (const [action, boundKey] of Object.entries(map)) {
+      if (boundKey && (boundKey === k || boundKey.toLowerCase() === k)) return action;
+    }
+    return null;
+  }
+  function captureHotkey(e) {
+    // Ignore modifier-only presses.
+    if (['Shift','Control','Alt','Meta','OS'].includes(e.key)) return;
+    e.preventDefault();
+    const action = state.hkCapture;
+    const newKey = eventKey(e);
+    // Escape cancels capture without changing the binding.
+    if (newKey === 'Escape') { state.hkCapture = null; renderHotkeys(); return; }
+    // Prevent collisions: if another action was on this key, unbind it.
+    const map = activeHotkeys();
+    for (const [other, otherKey] of Object.entries(map)) {
+      if (other !== action && otherKey === newKey) map[other] = '';
+    }
+    map[action] = newKey;
+    state.controls.hotkeys = map;
+    state.hkCapture = null;
+    saveControls();
+    renderHotkeys();
+  }
+  function resetHotkeys() {
+    state.controls.hotkeys = { ...DEFAULT_HOTKEYS };
+    saveControls();
+    renderHotkeys();
+  }
+  function displayKey(k) {
+    if (k === ' ') return 'Space';
+    if (!k) return '—';
+    return k.length === 1 ? k.toUpperCase() : k;
+  }
+  function renderHotkeys() {
+    const wrap = $('qsHotkeys');
+    const map = activeHotkeys();
+    wrap.innerHTML =
+      Object.entries(HOTKEY_ACTIONS).map(([action, def]) => {
+        const capturing = state.hkCapture === action;
+        return `<div class="hk-row">
+          <span class="hk-label">${esc(def.label)}</span>
+          <span class="hk-key ${capturing ? 'capture' : ''}">${capturing ? 'Press…' : esc(displayKey(map[action]))}</span>
+          <button class="hk-bind btn-sm" data-action="${action}">${capturing ? 'Cancel' : 'Bind'}</button>
+        </div>`;
+      }).join('') +
+      `<div class="hk-actions"><button id="hkReset" class="danger">Reset defaults</button></div>`;
+    // Wire the newly-rendered buttons.
+    wrap.querySelectorAll('.hk-bind').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.hkCapture = state.hkCapture === btn.dataset.action ? null : btn.dataset.action;
+        renderHotkeys();
+      });
+    });
+    $('hkReset')?.addEventListener('click', () => {
+      if (confirm('Reset all hotkeys to defaults?')) resetHotkeys();
+    });
+  }
+
+  /* =================================================================
+     QUICK SETTINGS DRAWER — lives inside the viewport, works in fullscreen
+     ================================================================= */
+  function openQuickSettings() { $('qsDrawer').classList.add('open'); syncQuickSettings(); renderHotkeys(); }
+  function closeQuickSettings() { $('qsDrawer').classList.remove('open'); state.hkCapture = null; }
+  function toggleQuickSettings() { $('qsDrawer').classList.contains('open') ? closeQuickSettings() : openQuickSettings(); }
+  function syncQuickSettings() {
+    const c = state.controls;
+    // Sliders
+    $('qsPower').value  = c.powerLimit ?? 100; $('qsPowerVal').textContent = (c.powerLimit ?? 100) + '%';
+    $('qsTrim').value   = c.trim ?? 0;         $('qsTrimVal').textContent  = ((c.trim ?? 0) > 0 ? '+' : '') + (c.trim ?? 0) + '°';
+    $('qsEpa').value    = c.epa ?? 100;        $('qsEpaVal').textContent   = (c.epa ?? 100) + '%';
+    $('qsFloor').value  = c.throttleMin ?? 0;  $('qsFloorVal').textContent = (c.throttleMin ?? 0) + '%';
+    $('qsEng').value    = c.engBrake ?? 100;   $('qsEngVal').textContent   = (c.engBrake ?? 100) + '%';
+    // Transmission segment
+    document.querySelectorAll('#qsTransSeg button').forEach((b) =>
+      b.classList.toggle('on', b.dataset.trans === c.transmission));
+    // Reverse + engine sound toggles
+    $('qsReverse').classList.toggle('on', state.reverse);
+    $('qsReverse').textContent = state.reverse ? '◄ Reverse: ON' : '◄ Reverse: OFF';
+    $('qsSound').classList.toggle('on', !!c.sound);
+    $('qsSound').textContent = c.sound ? '🔊 Sound: ON' : '🔈 Sound: OFF';
   }
 
   /* =================================================================
@@ -2219,6 +2451,22 @@
     $('videoDevice').addEventListener('change', () => { if (state.stream) startVideo(); });
     $('btnFullscreen').addEventListener('click', toggleFullscreen);
     $('btnSnapshot').addEventListener('click', snapshot);
+    $('btnQuickSettings').addEventListener('click', toggleQuickSettings);
+    $('qsClose').addEventListener('click', closeQuickSettings);
+    // Quick Settings sliders / toggles — reuse the existing setters so everything stays consistent.
+    $('qsPower').addEventListener('input',  (e) => setPowerLimit(parseInt(e.target.value, 10)));
+    $('qsTrim').addEventListener('input',   (e) => setTrim(parseInt(e.target.value, 10)));
+    $('qsEpa').addEventListener('input',    (e) => setEpa(parseInt(e.target.value, 10)));
+    $('qsFloor').addEventListener('input',  (e) => setThrottleMin(parseInt(e.target.value, 10)));
+    $('qsEng').addEventListener('input',    (e) => setEngineBrake(parseInt(e.target.value, 10)));
+    $('qsReverse').addEventListener('click', toggleReverse);
+    $('qsSound').addEventListener('click', toggleSound);
+    document.querySelectorAll('#qsTransSeg button').forEach((b) =>
+      b.addEventListener('click', () => setTransmission(b.dataset.trans)));
+    $('qsToggleHotkeys').addEventListener('click', () => {
+      const hk = $('qsHotkeys'); hk.hidden = !hk.hidden;
+      if (!hk.hidden) renderHotkeys();
+    });
 
     // Safety
     $('btnArm').addEventListener('click', () => setArmed(!state.armed));
@@ -2292,15 +2540,15 @@
     // ---- Keyboard: driving + shortcuts ----
     const editable = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); closeImportModal(); closeCalModal(); closeFleet(); return; }
+      if (e.key === 'Escape') { closeCarModal(); closeCtrlModal(); closeImportModal(); closeCalModal(); closeFleet(); closeQuickSettings(); return; }
       if (editable(e.target)) return;
+      // Hotkey capture mode: swallow the next keypress into the pending action.
+      if (state.hkCapture) { captureHotkey(e); return; }
+      // Look up mapped action for this key (case-insensitive for letters).
+      const action = matchHotkey(e);
+      if (action) { HOTKEY_ACTIONS[action].fn(); e.preventDefault(); return; }
+      // Driving-key fallback (only when the key isn't bound to an action).
       const k = e.key.toLowerCase();
-      if (k === ' ') { e.preventDefault(); eStop(); return; }
-      if (k === 'enter') { e.preventDefault(); setArmed(!state.armed); return; }
-      if (k === 'r') { toggleReverse(); return; }
-      if (k === 'e') { shiftGear(+1); return; }
-      if (k === 'q') { shiftGear(-1); return; }
-      // driving keys
       if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
         state.keys[k] = true; e.preventDefault();
       }
