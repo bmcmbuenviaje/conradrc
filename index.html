@@ -542,6 +542,7 @@
         </div>
         <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5">
           Rumble pulses on E-STOP, redline, and low-battery. 0% disables. Requires a wheel/pad with haptic actuator (Chrome).
+          <br><b>On racing wheels</b> (Logitech / Thrustmaster / Fantech) browsers can't control rumble strength — only pulse length. Lower % = shorter buzz. Xbox / DualSense controllers get proper strength scaling.
         </p>
       </section>
 
@@ -2519,10 +2520,16 @@
     const now = performance.now();
     if (now - state.lastHaptic < 100) return;    // debounce
     state.lastHaptic = now;
-    // Cap magnitudes at 1.0 even if the user cranks past 100%.
+    // Scale BOTH magnitude AND duration by the gain. Reason: most racing-wheel
+    // drivers in browsers (Logitech, Thrustmaster, Fantech, etc.) ignore the
+    // magnitude parameter and always buzz at hardware-default strength; they
+    // only respect `duration`. Gamepads (Xbox / DualSense) respect both.
+    // Scaling both means the slider makes a felt difference on every kind of
+    // hardware — as magnitude on good drivers, as pulse length elsewhere.
     const s = Math.max(0, Math.min(1, strong * gain));
     const w = Math.max(0, Math.min(1, weak * gain));
-    try { act.playEffect('dual-rumble', { duration: ms, strongMagnitude: s, weakMagnitude: w }); } catch (_) {}
+    const d = Math.max(30, Math.min(2000, Math.round(ms * gain)));
+    try { act.playEffect('dual-rumble', { duration: d, strongMagnitude: s, weakMagnitude: w }); } catch (_) {}
   }
   function updateHaptics() {
     // Redline pulse
