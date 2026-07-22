@@ -131,15 +131,23 @@
     .stage { display: flex; flex-direction: column; gap: 20px; }
     .viewport {
       position: relative;
+      /* Default aspect until a stream connects. Overridden at runtime to match
+         whatever the actual camera source reports (16:9 webcam, 4:3 FPV
+         grabber, 1:1 action-cam, whatever). Kept as a fallback if the source
+         doesn't report dimensions. */
       aspect-ratio: 4 / 3;
       width: 100%;
+      max-height: calc(100vh - 120px); /* keep portrait sources from taking the whole page */
       background: #000;
       border: 1px solid var(--stroke);
       border-radius: 14px;
       overflow: hidden;
       box-shadow: 0 0 60px rgba(0,229,255,0.08) inset;
     }
-    .viewport video { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(1.1) contrast(1.05); }
+    /* object-fit: contain preserves the whole frame instead of cropping.
+       Combined with the runtime aspect-ratio update below, this fits the video
+       edge-to-edge with no black bars in either direction. */
+    .viewport video { width: 100%; height: 100%; object-fit: contain; display: block; filter: saturate(1.1) contrast(1.05); }
     .viewport:fullscreen { aspect-ratio: auto; width: 100vw; height: 100vh; border-radius: 0; }
     .viewport:fullscreen video { object-fit: contain; }
     .viewport .no-signal {
@@ -2458,11 +2466,27 @@
       const s = track.getSettings();
       log(`FPV feed live: ${s.width}×${s.height} @ ${Math.round(s.frameRate || 0)}fps`);
       await enumerateVideo();
+
+      // Match the viewport's aspect ratio to whatever the source actually is,
+      // so wide (16:9) sources aren't cropped and portrait sources aren't
+      // stretched. Uses the video element's own metadata event so it works
+      // even if the track's reported settings are missing width/height.
+      const applyAspect = () => {
+        const w = video.videoWidth, h = video.videoHeight;
+        if (w > 0 && h > 0) $('viewport').style.aspectRatio = w + ' / ' + h;
+      };
+      applyAspect();
+      video.addEventListener('loadedmetadata', applyAspect, { once: true });
+      // Camera resolution can change mid-stream (constraint negotiation) — track that too.
+      video.addEventListener('resize', applyAspect);
+
       track.addEventListener('ended', () => {
         setChip('chipVideo', false);
         $('noSignal').style.display = 'flex';
         log('FPV feed ended.', 'err');
         state.stream = null;
+        // Reset to the default aspect until a new stream connects.
+        $('viewport').style.aspectRatio = '';
       });
       $('btnRecord').disabled = false;
     } catch (err) {
