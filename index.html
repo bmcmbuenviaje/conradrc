@@ -371,7 +371,7 @@
 
     /* Hotkeys sub-panel */
     .qs-hotkeys { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--stroke); }
-    .hk-row { display:grid; grid-template-columns: 1fr auto auto; gap:6px; align-items:center; padding: 4px 0; font-size:11px; }
+    .hk-row { display:grid; grid-template-columns: 1fr auto auto auto auto; gap:6px; align-items:center; padding: 4px 0; font-size:11px; }
     .hk-row .hk-label { color: var(--text); }
     .hk-key {
       min-width: 56px; padding: 3px 8px; text-align:center;
@@ -957,8 +957,14 @@
     leftSignal: 'j',      rightSignal: 'l',
     hazard: 'x',          horn: 'z',          brakeManual: 'b',
   };
+  // Parallel to the key-binding map. Each entry is a gamepad button INDEX
+  // (0-based, matches navigator.getGamepads()[i].buttons order) or null.
+  const DEFAULT_HOTKEY_BUTTONS = {};
   function activeHotkeys() {
     return { ...DEFAULT_HOTKEYS, ...(state.controls.hotkeys || {}) };
+  }
+  function activeHotkeyButtons() {
+    return { ...DEFAULT_HOTKEY_BUTTONS, ...(state.controls.hotkeyButtons || {}) };
   }
   // Per-gear top-speed cap, as % of Max Power. Index 0 = gear 1 ... index 5 = gear 6.
   // Vehicles can override this via `tune.gearCaps` (also 6 values).
@@ -1016,8 +1022,9 @@
     stream: null, recorder: null, recording: false, recordedChunks: [], videoDevices: [],
     // ---- Haptics ----
     lastHaptic: 0, wasRedline: false, wasLowBatt: false,
-    // ---- Hotkey capture (temporary while user picks a new key for an action) ----
-    hkCapture: null,
+    // ---- Hotkey capture (temporary while user picks a new binding for an action) ----
+    // hkCapture holds the action name; hkCaptureType is 'key' or 'button'.
+    hkCapture: null, hkCaptureType: null,
     // ---- Lights: manual toggles (brake + reverse are automatic in controlTick) ----
     lights: {
       head: false, highbeam: false,
@@ -1751,10 +1758,39 @@
       state.prevButtons[idx] = pressed;
       return pressed && !was;
     };
+
+    // If the user is currently capturing a gamepad button for a hotkey,
+    // grab the first pressed one and bind it — don't fire the action itself.
+    if (state.hkCapture && state.hkCaptureType === 'button') {
+      for (let i = 0; i < pad.buttons.length; i++) {
+        if (edge(i)) {
+          const map = { ...(state.controls.hotkeyButtons || {}) };
+          // Collision: if this button was already bound to a different action, unbind that first.
+          for (const [a, b] of Object.entries(map)) if (b === i) map[a] = null;
+          map[state.hkCapture] = i;
+          state.controls.hotkeyButtons = map;
+          state.hkCapture = null;
+          state.hkCaptureType = null;
+          saveControls();
+          renderHotkeys();
+          return; // don't also fire actions on this press
+        }
+      }
+      return; // don't run hotkey/legacy paths while capturing
+    }
+
+    // Legacy fields kept for backward compat with older saved rosters.
     const c = state.controls;
     if (edge(c.btnShiftUp))   shiftGear(+1);
     if (edge(c.btnShiftDown)) shiftGear(-1);
     if (edge(c.btnReverse))   toggleReverse();
+
+    // New unified path: any HOTKEY_ACTION with a bound gamepad button fires here.
+    const bmap = activeHotkeyButtons();
+    for (const [action, btn] of Object.entries(bmap)) {
+      if (btn === null || btn === undefined) continue;
+      if (edge(btn) && HOTKEY_ACTIONS[action]) HOTKEY_ACTIONS[action].fn();
+    }
   }
 
   function paintHud(servo, motor) {
@@ -2087,10 +2123,13 @@
     // Ignore modifier-only presses.
     if (['Shift','Control','Alt','Meta','OS'].includes(e.key)) return;
     e.preventDefault();
+    // If we're in button-capture mode, ignore keyboard entirely — the gamepad
+    // polling in handleMappedButtons will pick up the wheel button instead.
+    if (state.hkCaptureType !== 'key') return;
     const action = state.hkCapture;
     const newKey = eventKey(e);
     // Escape cancels capture without changing the binding.
-    if (newKey === 'Escape') { state.hkCapture = null; renderHotkeys(); return; }
+    if (newKey === 'Escape') { state.hkCapture = null; state.hkCaptureType = null; renderHotkeys(); return; }
     // Prevent collisions: if another action was on this key, unbind it.
     const map = activeHotkeys();
     for (const [other, otherKey] of Object.entries(map)) {
@@ -2099,11 +2138,13 @@
     map[action] = newKey;
     state.controls.hotkeys = map;
     state.hkCapture = null;
+    state.hkCaptureType = null;
     saveControls();
     renderHotkeys();
   }
   function resetHotkeys() {
     state.controls.hotkeys = { ...DEFAULT_HOTKEYS };
+    state.controls.hotkeyButtons = {};
     saveControls();
     renderHotkeys();
   }
@@ -2114,26 +2155,36 @@
   }
   function renderHotkeys() {
     const wrap = $('qsHotkeys');
-    const map = activeHotkeys();
+    const kmap = activeHotkeys();
+    const bmap = activeHotkeyButtons();
+    const cap = state.hkCapture;
+    const capType = state.hkCaptureType;
     wrap.innerHTML =
       Object.entries(HOTKEY_ACTIONS).map(([action, def]) => {
-        const capturing = state.hkCapture === action;
+        const capKey = cap === action && capType === 'key';
+        const capBtn = cap === action && capType === 'button';
+        const keyLabel = capKey ? 'Press key…' : esc(displayKey(kmap[action]));
+        const btn = bmap[action];
+        const btnLabel = capBtn ? 'Press button…' : (typeof btn === 'number' ? 'Btn ' + btn : '—');
         return `<div class="hk-row">
           <span class="hk-label">${esc(def.label)}</span>
-          <span class="hk-key ${capturing ? 'capture' : ''}">${capturing ? 'Press…' : esc(displayKey(map[action]))}</span>
-          <button class="hk-bind btn-sm" data-action="${action}">${capturing ? 'Cancel' : 'Bind'}</button>
+          <span class="hk-key ${capKey ? 'capture' : ''}">${keyLabel}</span>
+          <button class="hk-bind btn-sm" data-action="${action}" data-type="key">${capKey ? 'Cancel' : 'Bind Key'}</button>
+          <span class="hk-key ${capBtn ? 'capture' : ''}" style="min-width:64px;">${btnLabel}</span>
+          <button class="hk-bind btn-sm" data-action="${action}" data-type="button">${capBtn ? 'Cancel' : 'Bind Btn'}</button>
         </div>`;
       }).join('') +
-      `<div class="hk-actions"><button id="hkReset" class="danger">Reset defaults</button></div>`;
-    // Wire the newly-rendered buttons.
+      `<div class="hk-actions"><button id="hkReset" class="danger">Reset all defaults</button></div>`;
     wrap.querySelectorAll('.hk-bind').forEach((btn) => {
       btn.addEventListener('click', () => {
-        state.hkCapture = state.hkCapture === btn.dataset.action ? null : btn.dataset.action;
+        const same = state.hkCapture === btn.dataset.action && state.hkCaptureType === btn.dataset.type;
+        state.hkCapture     = same ? null : btn.dataset.action;
+        state.hkCaptureType = same ? null : btn.dataset.type;
         renderHotkeys();
       });
     });
     $('hkReset')?.addEventListener('click', () => {
-      if (confirm('Reset all hotkeys to defaults?')) resetHotkeys();
+      if (confirm('Reset all hotkeys (both keys and gamepad buttons) to defaults?')) resetHotkeys();
     });
   }
 
@@ -2141,7 +2192,11 @@
      QUICK SETTINGS DRAWER — lives inside the viewport, works in fullscreen
      ================================================================= */
   function openQuickSettings() { $('qsDrawer').classList.add('open'); syncQuickSettings(); renderHotkeys(); }
-  function closeQuickSettings() { $('qsDrawer').classList.remove('open'); state.hkCapture = null; }
+  function closeQuickSettings() {
+    $('qsDrawer').classList.remove('open');
+    state.hkCapture = null;
+    state.hkCaptureType = null;
+  }
   function toggleQuickSettings() { $('qsDrawer').classList.contains('open') ? closeQuickSettings() : openQuickSettings(); }
   function syncQuickSettings() {
     const c = state.controls;
