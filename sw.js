@@ -1,6 +1,6 @@
 /* RC Sim Arcade — service worker: offline cache for the static shell.
    Bump CACHE when you change any cached asset so clients refresh. */
-const CACHE = 'rcarcade-v1';
+const CACHE = 'rcarcade-v2';
 const ASSETS = [
   './',
   './index.html',

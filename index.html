@@ -568,7 +568,7 @@
 
       <section class="panel">
         <h2>FPV Video</h2>
-        <div class="kv"><span>Capture</span><b>640×480 @ 60fps</b></div>
+        <div class="kv"><span>Capture</span><b id="captureResVal">native (auto)</b></div>
         <button id="btnVideo">Start Frame Grabber</button>
         <div class="btn-row">
           <select id="videoDevice" title="Switch capture source (chase-cam swap)" style="width:100%;padding:9px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
@@ -2444,11 +2444,15 @@
   async function startVideo() {
     if (!navigator.mediaDevices?.getUserMedia) { log('MediaDevices unsupported.', 'err'); return; }
     const deviceId = $('videoDevice').value;
+    // Don't force width/height — that constrains the camera to whatever we
+    // asked (e.g. 640x480 forced a 4:3 crop even on 16:9 sources). Instead
+    // give an upper bound only, so the camera delivers its native aspect
+    // ratio and the viewport's auto-fit code can match it.
     const constraints = {
       audio: false,
       video: {
-        width:  { ideal: 640 },
-        height: { ideal: 480 },
+        width:  { max: 1920 },
+        height: { max: 1080 },
         frameRate: { ideal: 60 },
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       },
@@ -2465,6 +2469,9 @@
       const track = stream.getVideoTracks()[0];
       const s = track.getSettings();
       log(`FPV feed live: ${s.width}×${s.height} @ ${Math.round(s.frameRate || 0)}fps`);
+      if ($('captureResVal') && s.width && s.height) {
+        $('captureResVal').textContent = s.width + '×' + s.height + ' @ ' + Math.round(s.frameRate || 0) + 'fps';
+      }
       await enumerateVideo();
 
       // Match the viewport's aspect ratio to whatever the source actually is,
