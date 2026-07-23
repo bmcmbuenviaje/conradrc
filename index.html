@@ -166,6 +166,68 @@
     .hud .val { font-size: 20px; font-weight: 700; }
     .hud .telem-bad .val { color: var(--bad); }
     .hud .telem-ok .val  { color: var(--neon-lime); }
+    /* Global HUD scale + per-widget movement (populated at runtime from state.controls.hudLayout). */
+    .hud .corner {
+      --dx: 0px; --dy: 0px;
+      transform: translate(var(--dx), var(--dy)) scale(var(--hud-scale, 1));
+    }
+    .hud .tl { transform-origin: top left; }
+    .hud .tr { transform-origin: top right; }
+    .hud .bl { transform-origin: bottom left; }
+    .hud .br { transform-origin: bottom right; }
+    .hud .tc { transform-origin: top center; }
+    /* HUD edit mode: outline + grab cursor on every widget so users can drag them. */
+    .hud.editing .corner {
+      pointer-events: auto;
+      outline: 2px dashed var(--neon-amber);
+      background: rgba(255, 176, 32, 0.06);
+      cursor: grab; user-select: none; touch-action: none;
+    }
+    .hud.editing .corner:active { cursor: grabbing; }
+    .hud-edit-hint {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+      z-index: 20; padding: 10px 16px; background: rgba(5,6,10,0.9); border: 1px solid var(--neon-amber);
+      border-radius: 10px; color: var(--neon-amber); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+    }
+
+    /* ---------- Touch overlay (phone / tablet driving) ---------- */
+    .touch-overlay {
+      position: absolute; inset: 0; z-index: 6;
+      display: none; pointer-events: none;
+    }
+    .touch-overlay.active { display: block; }
+    .touch-zone {
+      position: absolute; pointer-events: auto; touch-action: none;
+      background: rgba(0, 229, 255, 0.06);
+      border: 2px solid rgba(0, 229, 255, 0.28);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+    .touch-zone.active { background: rgba(0, 229, 255, 0.16); border-color: var(--neon-cyan); }
+    .touch-steer    { left: 3%; bottom: 15%; width: 34%; height: 22%; }
+    .touch-throttle { right: 3%; bottom: 15%; width: 14%; height: 60%; }
+    .touch-thumb {
+      position: absolute;
+      width: 42px; height: 42px; border-radius: 50%;
+      background: linear-gradient(180deg, var(--neon-cyan), var(--neon-magenta));
+      box-shadow: 0 0 16px rgba(0,229,255,0.6);
+      pointer-events: none;
+      transition: none;
+    }
+    .touch-steer .touch-thumb    { left: calc(50% - 21px); top: calc(50% - 21px); }
+    .touch-throttle .touch-thumb { left: calc(50% - 21px); bottom: 8px; top: auto; }
+    .touch-label {
+      position: absolute; top: 6px; left: 8px;
+      font-size: 10px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase;
+      pointer-events: none;
+    }
+    .touch-gyro-badge {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      z-index: 5; padding: 6px 12px; background: rgba(0, 229, 255, 0.85); color:#04060a;
+      font-weight: 800; letter-spacing: 2px; font-size: 11px; border-radius: 8px;
+      pointer-events: none;
+    }
     /* RPM shift-light strip + big gear indicator */
     .shift-lights { display:flex; gap:4px; justify-content:center; margin-bottom:5px; }
     .shift-lights span { width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,0.12); transition:background .04s linear; }
@@ -590,30 +652,30 @@
         <video id="fpv" autoplay playsinline muted></video>
         <div class="no-signal" id="noSignal">◍ NO SIGNAL ◍</div>
         <div class="hud">
-          <div class="corner tl">
+          <div class="corner tl" data-widget="tl">
             <div class="label">Target · <span id="hudArm" style="color:var(--text-dim)">DISARMED</span></div>
             <div class="val" id="hudTarget">—</div>
             <div class="label" style="margin-top:4px;">Battery / RSSI</div>
             <div class="val" id="hudBatt" style="font-size:15px;color:var(--text-dim)">—</div>
           </div>
-          <div class="corner tr telem-ok" id="hudLinkBox">
+          <div class="corner tr telem-ok" id="hudLinkBox" data-widget="tr">
             <div class="label">Link / TX Rate</div>
             <div class="val" id="hudRate">0 Hz</div>
             <div class="label" style="margin-top:4px;">Latency</div>
             <div class="val" id="hudLatency" style="font-size:15px;">— ms</div>
           </div>
-          <div class="corner tc" id="hudDrive" style="top:0;left:50%;transform:translateX(-50%);text-align:center;">
+          <div class="corner tc" id="hudDrive" data-widget="tc" style="top:0;left:50%;transform:translateX(-50%);text-align:center;">
             <div class="shift-lights" id="shiftLights"></div>
             <div class="drive-row">
               <span class="gear-big" id="hudGearNum">D</span>
               <span class="drive-cap" id="hudGear">AUTO · 100%</span>
             </div>
           </div>
-          <div class="corner bl">
+          <div class="corner bl" data-widget="bl">
             <div class="label">Steering</div>
             <div class="val" id="hudSteer">90°</div>
           </div>
-          <div class="corner br">
+          <div class="corner br" data-widget="br">
             <div class="label">Throttle</div>
             <div class="val" id="hudThrottle">0</div>
           </div>
@@ -622,6 +684,19 @@
         <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
         <button class="vp-btn vp-cog" id="btnQuickSettings" title="Quick settings (Tab)">⚙</button>
         <button class="vp-stop" id="btnEstopHud" title="Emergency stop (Space)">■ STOP</button>
+
+        <!-- Touch controls (phone / tablet). Auto-shows on touch devices. -->
+        <div class="touch-overlay" id="touchOverlay">
+          <div class="touch-zone touch-steer" id="touchSteer">
+            <div class="touch-thumb" id="touchSteerThumb"></div>
+            <div class="touch-label">STEER</div>
+          </div>
+          <div class="touch-zone touch-throttle" id="touchThrottle">
+            <div class="touch-thumb" id="touchThrottleThumb"></div>
+            <div class="touch-label">THROTTLE</div>
+          </div>
+          <div class="touch-gyro-badge" id="touchGyroBadge" hidden>📱 GYRO</div>
+        </div>
 
         <!-- Quick Settings drawer — lives INSIDE the viewport so it stays visible in fullscreen. -->
         <div class="qs-drawer" id="qsDrawer">
@@ -671,6 +746,29 @@
                 <button id="qsLightLeft">◄ Left: OFF</button>
                 <button id="qsLightRight">Right ►: OFF</button>
               </div>
+            </div>
+            <div class="qs-row" style="border-top:1px dashed var(--stroke); padding-top:10px;">
+              <label>Touch / Gyro (phone)</label>
+              <div class="qs-btns" style="margin-bottom:6px;">
+                <button id="qsTouch">📱 Touch: OFF</button>
+                <button id="qsGyro">📱 Gyro: OFF</button>
+              </div>
+              <div class="qs-btns">
+                <button id="qsGyroCal">🎯 Calibrate Gyro</button>
+              </div>
+              <div class="slider-head" style="margin-top:8px;"><span>Gyro sensitivity</span><b id="qsGyroSensVal">45°</b></div>
+              <input type="range" id="qsGyroSens" min="15" max="90" step="5" value="45" />
+              <div class="hint">Degrees of phone tilt for full servo lock. Lower = twitchier.</div>
+            </div>
+            <div class="qs-row" style="border-top:1px dashed var(--stroke); padding-top:10px;">
+              <label>HUD</label>
+              <div class="slider-head"><span>Scale</span><b id="qsHudScaleVal">1.00×</b></div>
+              <input type="range" id="qsHudScale" min="0.6" max="1.5" step="0.05" value="1" />
+              <div class="qs-btns" style="margin-top:6px;">
+                <button id="qsHudEdit">✎ HUD Edit: OFF</button>
+                <button id="qsHudReset" class="danger">Reset HUD</button>
+              </div>
+              <div class="hint">Turn Edit on, then drag any HUD widget to reposition it.</div>
             </div>
             <div class="qs-row">
               <button id="qsToggleHotkeys" class="btn-sm" style="width:100%;">⌨ Hotkeys…</button>
@@ -911,6 +1009,10 @@
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
     hotkeys: null,            // keyboard hotkey map { action: keyString }; null uses defaults
+    hudScale: 1.0,            // global HUD scale (0.6..1.5)
+    hudLayout: {},            // per-widget {dx, dy} pixel offsets from default position
+    touchAlwaysOn: false,     // force touch overlay on even on desktop
+    gyroSensitivity: 45,      // degrees of phone tilt = full servo lock
   };
 
   // Actions bindable to a keyboard hotkey. The `fn` reads from live state.
@@ -936,6 +1038,12 @@
     engBrakeUp:   { label: 'Engine Brake +10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) + 10) },
     engBrakeDown: { label: 'Engine Brake −10%',         fn: () => setEngineBrake((state.controls.engBrake || 100) - 10) },
     // ---- Lights ----
+    touchToggle:  { label: 'Touch controls toggle',     fn: () => setTouchActive(!state.touch.active) },
+    gyroToggle:   { label: 'Gyro steering toggle',      fn: () => toggleGyro() },
+    gyroCalibrate:{ label: 'Calibrate gyro (center)',   fn: () => calibrateGyro() },
+    hudEdit:      { label: 'HUD edit mode toggle',      fn: () => setHudEditMode(!state.hudEdit) },
+    hudScaleUp:   { label: 'HUD scale +5%',             fn: () => setHudScale((state.controls.hudScale || 1) + 0.05) },
+    hudScaleDown: { label: 'HUD scale −5%',             fn: () => setHudScale((state.controls.hudScale || 1) - 0.05) },
     headlights:   { label: 'Headlights toggle',         fn: () => toggleLight('head') },
     highbeamFlash:{ label: 'High-beam flash (2 s)',     fn: () => pulseLight('highbeam', 2000) },
     leftSignal:   { label: 'Left signal toggle',        fn: () => toggleSignal('left') },
@@ -1025,6 +1133,20 @@
     // ---- Hotkey capture (temporary while user picks a new binding for an action) ----
     // hkCapture holds the action name; hkCaptureType is 'key' or 'button'.
     hkCapture: null, hkCaptureType: null,
+    // ---- Touch + gyro control state ----
+    touch: {
+      active: false,
+      steerAxis: 0,
+      throttleAxis: -1,        // pedal-rest convention (-1 = released, 0 = mid, +1 = floored)
+      gyro: {
+        enabled: false,
+        live: 0,               // latest gamma reading (degrees, phone left/right tilt)
+        centerGamma: 0,        // calibrated zero point
+        sensitivity: 45,       // tilt degrees required for full lock
+      },
+    },
+    // ---- HUD editor: layout offsets + edit mode ----
+    hudEdit: false,
     // ---- Lights: manual toggles (brake + reverse are automatic in controlTick) ----
     lights: {
       head: false, highbeam: false,
@@ -1679,7 +1801,8 @@
      50 Hz CONTROL LOOP
      ================================================================= */
   function controlTick() {
-    const input = readGamepad() || readKeyboard();  // wheel first, else keyboard
+    // Input priority: real gamepad → touch/gyro → keyboard.
+    const input = readGamepad() || readTouch() || readKeyboard();
     handleMappedButtons(); // shift up/down + reverse edges
     const manual = state.controls.transmission === 'manual';
     let servo = 90, base = 0;
@@ -1743,6 +1866,22 @@
     if (k['d'] || k['arrowright']) steer += 1;
     const gas = (k['w'] || k['arrowup']) ? 1 : 0;   // 0..1 press
     const throttleAxis = state.controls.rest === 'neg' ? (gas * 2 - 1) : gas;
+    return { steerAxis: steer, throttleAxis };
+  }
+
+  /* Touch + gyro input path. Only returns non-null when the touch overlay is
+     showing AND the user is actually touching / tilting. Gyro overrides the
+     touch-steer pad if enabled; touch pad still handles throttle. */
+  function readTouch() {
+    if (state.padIndex !== null) return null;
+    if (!state.touch.active) return null;
+    let steer = state.touch.steerAxis;
+    if (state.touch.gyro.enabled) {
+      const g = state.touch.gyro;
+      const delta = (g.live - g.centerGamma) / (g.sensitivity || 45);
+      steer = Math.max(-1, Math.min(1, delta));
+    }
+    const throttleAxis = state.touch.throttleAxis;
     return { steerAxis: steer, throttleAxis };
   }
 
@@ -1943,6 +2082,182 @@
     saveControls(); updateTuneUI();
   }
   function testRumble() { rumble(0.6, 0.6, 250); }
+
+  /* =================================================================
+     TOUCH CONTROLS — onscreen steering + throttle pads for phone / tablet
+     ================================================================= */
+  function isTouchDevice() {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  }
+  function setTouchActive(on) {
+    state.touch.active = !!on;
+    $('touchOverlay').classList.toggle('active', state.touch.active);
+    if (!on) {
+      state.touch.steerAxis = 0;
+      state.touch.throttleAxis = state.controls.rest === 'neg' ? -1 : 0;
+    }
+    // Reflect in the Quick Settings drawer button label.
+    const b = $('qsTouch'); if (b) { b.classList.toggle('on', state.touch.active); b.textContent = state.touch.active ? '📱 Touch: ON' : '📱 Touch: OFF'; }
+  }
+  function setupTouchZone(el, thumbEl, axisName, orientation) {
+    // orientation: 'horizontal' (steer, mid=0) or 'vertical' (throttle, bottom=rest, top=full).
+    let touchId = null;
+    const handle = (clientX, clientY) => {
+      const rect = el.getBoundingClientRect();
+      let val;
+      if (orientation === 'horizontal') {
+        val = ((clientX - rect.left) / rect.width) * 2 - 1;
+      } else {
+        val = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      }
+      val = Math.max(-1, Math.min(1, val));
+      state.touch[axisName] = val;
+      // Move the thumb to match the finger position.
+      if (orientation === 'horizontal') {
+        const x = Math.max(0, Math.min(rect.width - 42, ((val + 1) / 2) * rect.width - 21));
+        thumbEl.style.left = x + 'px';
+        thumbEl.style.top = 'calc(50% - 21px)';
+      } else {
+        const fullH = rect.height;
+        const y = Math.max(0, Math.min(fullH - 42, (1 - (val + 1) / 2) * fullH - 21));
+        thumbEl.style.top = y + 'px';
+        thumbEl.style.left = 'calc(50% - 21px)';
+        thumbEl.style.bottom = 'auto';
+      }
+    };
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (touchId !== null) return;
+      const t = e.changedTouches[0]; touchId = t.identifier;
+      el.classList.add('active');
+      handle(t.clientX, t.clientY);
+    }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
+      for (const t of e.changedTouches) if (t.identifier === touchId) { handle(t.clientX, t.clientY); e.preventDefault(); break; }
+    }, { passive: false });
+    const endTouch = (e) => {
+      for (const t of e.changedTouches) if (t.identifier === touchId) {
+        touchId = null;
+        el.classList.remove('active');
+        // Reset to rest position when released.
+        if (axisName === 'steerAxis') state.touch.steerAxis = 0;
+        if (axisName === 'throttleAxis') state.touch.throttleAxis = state.controls.rest === 'neg' ? -1 : 0;
+        // Snap thumb back to center/bottom.
+        if (orientation === 'horizontal') { thumbEl.style.left = 'calc(50% - 21px)'; thumbEl.style.top = 'calc(50% - 21px)'; }
+        else { thumbEl.style.top = 'auto'; thumbEl.style.bottom = '8px'; thumbEl.style.left = 'calc(50% - 21px)'; }
+        break;
+      }
+    };
+    el.addEventListener('touchend',    endTouch);
+    el.addEventListener('touchcancel', endTouch);
+  }
+
+  /* =================================================================
+     PHONE GYRO — device tilt (gamma) drives steering
+     ================================================================= */
+  function initGyroListener() {
+    window.addEventListener('deviceorientation', (e) => {
+      if (typeof e.gamma === 'number') state.touch.gyro.live = e.gamma;
+    });
+  }
+  async function toggleGyro() {
+    // iOS 13+ requires user-gesture permission before deviceorientation fires.
+    if (!state.touch.gyro.enabled && typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res !== 'granted') { log('Gyro permission denied.', 'err'); return; }
+      } catch (err) { log('Gyro permission error: ' + err.message, 'err'); return; }
+    }
+    state.touch.gyro.enabled = !state.touch.gyro.enabled;
+    $('touchGyroBadge').hidden = !state.touch.gyro.enabled;
+    const b = $('qsGyro');
+    if (b) { b.classList.toggle('on', state.touch.gyro.enabled); b.textContent = state.touch.gyro.enabled ? '📱 Gyro: ON' : '📱 Gyro: OFF'; }
+    if (state.touch.gyro.enabled) calibrateGyro();
+    log('Gyro steering ' + (state.touch.gyro.enabled ? 'enabled — calibrated to current tilt' : 'disabled'));
+  }
+  function calibrateGyro() {
+    state.touch.gyro.centerGamma = state.touch.gyro.live;
+    log('Gyro centered at ' + state.touch.gyro.centerGamma.toFixed(1) + '°');
+  }
+
+  /* =================================================================
+     HUD EDITOR — global scale + per-widget drag positioning
+     ================================================================= */
+  function setHudScale(v) {
+    state.controls.hudScale = Math.max(0.6, Math.min(1.5, Number(v) || 1));
+    document.documentElement.style.setProperty('--hud-scale', state.controls.hudScale);
+    saveControls();
+    const el = $('qsHudScaleVal'); if (el) el.textContent = state.controls.hudScale.toFixed(2) + '×';
+    const s = $('qsHudScale'); if (s) s.value = state.controls.hudScale;
+  }
+  function applyHudLayout() {
+    const layout = state.controls.hudLayout || {};
+    document.querySelectorAll('.hud .corner[data-widget]').forEach((el) => {
+      const key = el.dataset.widget;
+      const off = layout[key] || { dx: 0, dy: 0 };
+      el.style.setProperty('--dx', (off.dx || 0) + 'px');
+      el.style.setProperty('--dy', (off.dy || 0) + 'px');
+    });
+  }
+  function resetHudLayout() {
+    state.controls.hudLayout = {};
+    saveControls();
+    applyHudLayout();
+    setHudScale(1);
+  }
+  function setHudEditMode(on) {
+    state.hudEdit = !!on;
+    const hud = document.querySelector('.hud');
+    hud.classList.toggle('editing', state.hudEdit);
+    // Add/remove a floating hint.
+    document.querySelectorAll('.hud-edit-hint').forEach((el) => el.remove());
+    if (state.hudEdit) {
+      const tip = document.createElement('div');
+      tip.className = 'hud-edit-hint';
+      tip.textContent = 'HUD EDIT — drag widgets to move · exit via ⚙';
+      document.querySelector('.hud').appendChild(tip);
+    }
+    const b = $('qsHudEdit');
+    if (b) { b.classList.toggle('on', state.hudEdit); b.textContent = state.hudEdit ? '✎ HUD Edit: ON' : '✎ HUD Edit: OFF'; }
+  }
+  function setupHudDrag() {
+    // One pointerdown handler per widget; uses pointer capture so drag continues even off the widget.
+    document.querySelectorAll('.hud .corner[data-widget]').forEach((el) => {
+      let dragging = false, startX = 0, startY = 0, baseDx = 0, baseDy = 0;
+      const parseVar = (v) => parseFloat((v || '').toString().replace('px','')) || 0;
+      el.addEventListener('pointerdown', (e) => {
+        if (!state.hudEdit) return;
+        dragging = true;
+        el.setPointerCapture(e.pointerId);
+        startX = e.clientX; startY = e.clientY;
+        const cs = getComputedStyle(el);
+        baseDx = parseVar(cs.getPropertyValue('--dx'));
+        baseDy = parseVar(cs.getPropertyValue('--dy'));
+        e.preventDefault();
+      });
+      el.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = baseDx + (e.clientX - startX);
+        const dy = baseDy + (e.clientY - startY);
+        el.style.setProperty('--dx', dx + 'px');
+        el.style.setProperty('--dy', dy + 'px');
+      });
+      const finish = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        try { el.releasePointerCapture(e.pointerId); } catch(_){}
+        const key = el.dataset.widget;
+        const cs = getComputedStyle(el);
+        const dx = parseVar(cs.getPropertyValue('--dx'));
+        const dy = parseVar(cs.getPropertyValue('--dy'));
+        state.controls.hudLayout = { ...(state.controls.hudLayout || {}), [key]: { dx, dy } };
+        saveControls();
+      };
+      el.addEventListener('pointerup',     finish);
+      el.addEventListener('pointercancel', finish);
+    });
+  }
 
   /* =================================================================
      LIGHTS — front headlights, brake, indicators, hazard, reverse, horn
@@ -2662,6 +2977,35 @@
     $('qsLightLeft').addEventListener('click',   () => toggleSignal('left'));
     $('qsLightRight').addEventListener('click',  () => toggleSignal('right'));
     $('qsLightHazard').addEventListener('click', toggleHazard);
+
+    // Touch / gyro controls
+    $('qsTouch').addEventListener('click', () => setTouchActive(!state.touch.active));
+    $('qsGyro').addEventListener('click', toggleGyro);
+    $('qsGyroCal').addEventListener('click', calibrateGyro);
+    $('qsGyroSens').addEventListener('input', (e) => {
+      const v = Math.max(15, Math.min(90, parseInt(e.target.value, 10) || 45));
+      state.touch.gyro.sensitivity = v; state.controls.gyroSensitivity = v; saveControls();
+      $('qsGyroSensVal').textContent = v + '°';
+    });
+    setupTouchZone($('touchSteer'),    $('touchSteerThumb'),    'steerAxis',    'horizontal');
+    setupTouchZone($('touchThrottle'), $('touchThrottleThumb'), 'throttleAxis', 'vertical');
+    initGyroListener();
+    // Auto-enable touch on touch-first devices (phones/tablets).
+    if (isTouchDevice() && !state.controls.touchAlwaysOn) { setTouchActive(true); }
+    // Restore saved gyro sensitivity.
+    if (typeof state.controls.gyroSensitivity === 'number') {
+      state.touch.gyro.sensitivity = state.controls.gyroSensitivity;
+      $('qsGyroSens').value = state.controls.gyroSensitivity;
+      $('qsGyroSensVal').textContent = state.controls.gyroSensitivity + '°';
+    }
+
+    // HUD scale + edit
+    $('qsHudScale').addEventListener('input', (e) => setHudScale(e.target.value));
+    $('qsHudEdit').addEventListener('click', () => setHudEditMode(!state.hudEdit));
+    $('qsHudReset').addEventListener('click', () => { if (confirm('Reset HUD layout and scale?')) resetHudLayout(); });
+    setupHudDrag();
+    setHudScale(state.controls.hudScale ?? 1);
+    applyHudLayout();
     document.querySelectorAll('#qsTransSeg button').forEach((b) =>
       b.addEventListener('click', () => setTransmission(b.dataset.trans)));
     $('qsToggleHotkeys').addEventListener('click', () => {
