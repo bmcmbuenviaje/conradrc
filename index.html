@@ -2241,6 +2241,23 @@
   const REMOTE_ID_PREFIX = 'rcarcade-';
   const REMOTE_PIN_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no confusing chars
 
+  // ICE servers for WebRTC negotiation. STUN alone works when both peers are
+  // on the same LAN or behind cone NATs. TURN relays are REQUIRED when one
+  // peer is on cellular (Carrier-Grade NAT) or a corporate/hotel network with
+  // symmetric NAT — those block direct P2P hole-punching entirely.
+  //
+  // Uses OpenRelay's free public TURN as a fallback so it works out of the
+  // box on cellular. If you host lots of events or want more reliable relay,
+  // sign up at metered.ca (or run coturn on a VPS) and replace these creds.
+  const REMOTE_ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'turn:openrelay.metered.ca:80',            username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443',           username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ];
+
   function loadPeerJS() {
     if (window.Peer) return Promise.resolve(true);
     return new Promise((resolve, reject) => {
@@ -2261,7 +2278,10 @@
     if (state.remote.peer) remoteLeave();
     const tryOpen = () => {
       const pin = makePin();
-      const peer = new window.Peer(REMOTE_ID_PREFIX + pin, { debug: 1 });
+      const peer = new window.Peer(REMOTE_ID_PREFIX + pin, {
+        debug: 1,
+        config: { iceServers: REMOTE_ICE_SERVERS },
+      });
       peer.on('open', () => {
         state.remote.peer = peer; state.remote.pin = pin; state.remote.mode = 'host';
         log('🛰 Hosting remote session. PIN: ' + pin);
@@ -2296,7 +2316,10 @@
     if (!pin || pin.length < 4) { log('Enter a valid PIN.', 'err'); return; }
     try { await loadPeerJS(); } catch (e) { log(e.message, 'err'); return; }
     if (state.remote.peer) remoteLeave();
-    const peer = new window.Peer(undefined, { debug: 1 });
+    const peer = new window.Peer(undefined, {
+      debug: 1,
+      config: { iceServers: REMOTE_ICE_SERVERS },
+    });
     state.remote.peer = peer; state.remote.mode = 'client'; state.remote.pin = pin.toUpperCase();
     updateRemoteUI();
     peer.on('open', () => {
