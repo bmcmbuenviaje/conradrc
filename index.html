@@ -2258,6 +2258,12 @@
     state.touch.gyro.enabled = !state.touch.gyro.enabled;
     $('touchGyroBadge').hidden = !state.touch.gyro.enabled;
     $('touchOverlay').classList.toggle('gyro-on', state.touch.gyro.enabled);
+    // Auto-rotate to landscape when gyro is on so the user can hold the phone
+    // like a real steering wheel. Fullscreen is a prerequisite for orientation
+    // lock in most browsers; iOS Safari doesn't support lock at all — we fail
+    // silently in that case and just note it in the log.
+    if (state.touch.gyro.enabled) requestLandscape();
+    else releaseLandscape();
     const b = $('qsGyro');
     if (b) { b.classList.toggle('on', state.touch.gyro.enabled); b.textContent = state.touch.gyro.enabled ? '📱 Gyro: ON' : '📱 Gyro: OFF'; }
     if (state.touch.gyro.enabled) calibrateGyro();
@@ -2266,6 +2272,29 @@
   function calibrateGyro() {
     state.touch.gyro.centerGamma = state.touch.gyro.live;
     log('Gyro centered at ' + state.touch.gyro.centerGamma.toFixed(1) + '°');
+  }
+  // Best-effort landscape lock. Requires a user gesture (the gyro-toggle click
+  // qualifies). Requires fullscreen on most engines — request that too. iOS
+  // Safari doesn't support the Screen Orientation lock API at all; on iOS the
+  // user has to rotate manually (auto-rotate lock off in Control Center).
+  async function requestLandscape() {
+    try {
+      const vp = $('viewport');
+      if (!document.fullscreenElement && vp.requestFullscreen) {
+        try { await vp.requestFullscreen(); } catch (_) {}
+      }
+      if (screen.orientation && screen.orientation.lock) {
+        await screen.orientation.lock('landscape');
+        log('[gyro] locked to landscape');
+      } else {
+        log('[gyro] orientation lock unavailable — rotate the phone manually (iOS: turn off portrait lock).');
+      }
+    } catch (e) {
+      log('[gyro] could not auto-rotate: ' + (e.message || e), 'err');
+    }
+  }
+  function releaseLandscape() {
+    try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
   }
 
   /* =================================================================
@@ -2355,11 +2384,17 @@
         }, 15000);
       });
       peer.on('call', (call) => {
-        // Client is asking for our FPV feed. Only answer if we have a stream — an empty
-        // MediaStream reply can trip SDP negotiation on some browsers.
-        if (!state.stream) { log('[LR] host: incoming FPV call, but no local stream. Start Frame Grabber first.'); return; }
+        // Client wants our FPV feed. If no stream yet, decline instead of leaving
+        // the client hanging — the client's watchdog will surface the reason.
+        if (!state.stream) {
+          log('[LR] host: FPV call refused — no local stream. Start Frame Grabber on THIS machine first.', 'err');
+          try { call.close(); } catch (_) {}
+          return;
+        }
+        log('[LR] host: answering FPV call with local stream (' + state.stream.getVideoTracks().length + ' video tracks)');
         call.answer(state.stream);
         state.remote.mediaCall = call;
+        call.on('iceStateChanged', (s) => log('[LR] host media ICE: ' + s));
         call.on('close', () => { state.remote.mediaCall = null; });
         call.on('error', (err) => log('[LR] host media error: ' + (err.type || err.message || err), 'err'));
       });
@@ -2415,17 +2450,33 @@
   function tryRemoteVideo(hostId) {
     if (!state.remote.peer || !state.remote.connected) return;
     try {
+      log('[LR] client: requesting host FPV stream…');
       const stub = new MediaStream();
       const call = state.remote.peer.call(hostId, stub);
       state.remote.mediaCall = call;
+      let streamReceived = false;
       call.on('stream', (remoteStream) => {
-        $('fpv').srcObject = remoteStream;
+        streamReceived = true;
+        const v = $('fpv');
+        v.srcObject = remoteStream;
+        v.muted = true; v.playsInline = true;
+        // Some mobile browsers won't auto-play a WebRTC track without an explicit play() call.
+        v.play().catch((err) => log('[LR] client: video play blocked — ' + err.message, 'err'));
         $('noSignal').style.display = 'none';
         setChip('chipVideo', true);
-        log('🛰 Remote FPV feed live.');
+        log('🛰 Remote FPV feed live (' + remoteStream.getVideoTracks().length + ' tracks).');
       });
+      call.on('iceStateChanged', (s) => log('[LR] client media ICE: ' + s));
       call.on('close', () => { setChip('chipVideo', false); $('fpv').srcObject = null; });
       call.on('error', (err) => log('[LR] client media error: ' + (err.type || err.message || err), 'err'));
+      // Watchdog: if no stream arrives in 10 s, tell the user what to check.
+      setTimeout(() => {
+        if (state.remote.mediaCall === call && !streamReceived) {
+          log('[LR] client: no FPV stream in 10 s. Common causes:', 'err');
+          log('       (a) host has not started Frame Grabber → click Start Frame Grabber on the PC', 'err');
+          log('       (b) TURN server can\'t relay media → try same WiFi as host, or a paid TURN', 'err');
+        }
+      }, 10000);
     } catch (e) {
       log('[LR] client: could not start FPV call — ' + e.message, 'err');
     }
@@ -3361,12 +3412,22 @@
     });
     setupTouchZone($('touchSteer'),    $('touchSteerThumb'),    'steerAxis',    'horizontal');
     setupTouchZone($('touchThrottle'), $('touchThrottleThumb'), 'throttleAxis', 'vertical');
-    // On-overlay ARM + REV buttons (touchend so keyboard focus doesn't get stolen mid-drive).
-    $('touchArm').addEventListener('click', () => {
-      if (state.estop) { setArmed(true); }          // in E-STOP mode: pressing ARM clears + arms
-      else             { setArmed(!state.armed); }  // otherwise just toggle
+    // On-overlay ARM + REV buttons: use pointerdown (fires immediately on touch,
+    // sidesteps mobile 'click' quirks where the touch pads' non-default
+    // touch-action can eat click events). stopPropagation keeps the tap from
+    // accidentally starting a touch-pad drag.
+    const bindTapBtn = (id, fn) => {
+      const el = $(id);
+      const handler = (e) => { e.preventDefault(); e.stopPropagation(); fn(); };
+      el.addEventListener('pointerdown', handler, { passive: false });
+      // Fallback for browsers where pointerevents aren't fully wired to this element.
+      el.addEventListener('click', handler);
+    };
+    bindTapBtn('touchArm', () => {
+      if (state.estop) setArmed(true);          // in E-STOP mode: ARM clears + arms
+      else             setArmed(!state.armed);  // otherwise just toggle
     });
-    $('touchRev').addEventListener('click', toggleReverse);
+    bindTapBtn('touchRev', toggleReverse);
     syncTouchButtons();
     initGyroListener();
     // Auto-enable touch on touch-first devices (phones/tablets).
