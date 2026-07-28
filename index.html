@@ -2341,6 +2341,12 @@
   async function remoteHost() {
     try { await loadPeerJS(); } catch (e) { log(e.message, 'err'); return; }
     if (state.remote.peer) remoteLeave();
+    // The single most common host-side gotcha: forgetting to start Frame Grabber
+    // first. Warn loudly BEFORE the client connects, so the user has time to fix it.
+    if (!state.stream) {
+      log('⚠ Frame Grabber is NOT running — remote clients will connect but see no FPV video.', 'err');
+      log('   Fix: click Start Frame Grabber in the FPV Video panel BEFORE the phone joins.', 'err');
+    }
     const tryOpen = () => {
       const pin = makePin();
       log('[LR] host: opening broker connection…');
@@ -2455,6 +2461,7 @@
       const call = state.remote.peer.call(hostId, stub);
       state.remote.mediaCall = call;
       let streamReceived = false;
+      let lastMediaIce = 'new';
       call.on('stream', (remoteStream) => {
         streamReceived = true;
         const v = $('fpv');
@@ -2466,15 +2473,20 @@
         setChip('chipVideo', true);
         log('🛰 Remote FPV feed live (' + remoteStream.getVideoTracks().length + ' tracks).');
       });
-      call.on('iceStateChanged', (s) => log('[LR] client media ICE: ' + s));
+      call.on('iceStateChanged', (s) => { lastMediaIce = s; log('[LR] client media ICE: ' + s); });
       call.on('close', () => { setChip('chipVideo', false); $('fpv').srcObject = null; });
       call.on('error', (err) => log('[LR] client media error: ' + (err.type || err.message || err), 'err'));
       // Watchdog: if no stream arrives in 10 s, tell the user what to check.
+      // The message is different depending on WHERE it failed.
       setTimeout(() => {
-        if (state.remote.mediaCall === call && !streamReceived) {
-          log('[LR] client: no FPV stream in 10 s. Common causes:', 'err');
-          log('       (a) host has not started Frame Grabber → click Start Frame Grabber on the PC', 'err');
-          log('       (b) TURN server can\'t relay media → try same WiFi as host, or a paid TURN', 'err');
+        if (state.remote.mediaCall !== call || streamReceived) return;
+        log('[LR] client: no FPV stream in 10 s. Media ICE reached: ' + lastMediaIce + '.', 'err');
+        if (lastMediaIce === 'connected' || lastMediaIce === 'completed') {
+          log('       → Media transport is UP but the host sent no video tracks.', 'err');
+          log('       → On the PC, click Start Frame Grabber in the FPV Video panel, then reconnect from the phone.', 'err');
+        } else {
+          log('       → Media transport never opened. TURN server likely can\'t relay video.', 'err');
+          log('       → Try (a) put both devices on the same WiFi, or (b) switch to a paid TURN provider.', 'err');
         }
       }, 10000);
     } catch (e) {
@@ -2578,8 +2590,16 @@
       if (btnJoin) btnJoin.disabled = true;
       const status = r.connected ? '<b style="color:var(--ok)">connected</b>'
                                  : '<b style="color:var(--text-dim)">waiting…</b>';
+      // For the host, also surface whether Frame Grabber is running — otherwise
+      // remote clients will see a blank video pane, and the most common cause
+      // is exactly this.
+      const fpv = r.mode === 'host'
+        ? (state.stream
+            ? '<b style="color:var(--ok)">🎥 FPV ready</b>'
+            : '<b style="color:var(--bad)">⚠ Frame Grabber OFF — clients will see no video</b>')
+        : '';
       info.innerHTML = r.mode === 'host'
-        ? 'Hosting · PIN <b style="color:var(--neon-cyan);font-family:Consolas,monospace;font-size:20px;letter-spacing:3px;">' + esc(r.pin) + '</b> · ' + status
+        ? 'Hosting · PIN <b style="color:var(--neon-cyan);font-family:Consolas,monospace;font-size:20px;letter-spacing:3px;">' + esc(r.pin) + '</b> · ' + status + '<br>' + fpv
         : 'Joined ' + esc(r.pin) + ' · ' + status;
     }
   }
@@ -3240,6 +3260,8 @@
       video.srcObject = stream;
       $('noSignal').style.display = 'none';
       setChip('chipVideo', true);
+      // Refresh the Remote panel if we're hosting so the host sees FPV go green.
+      updateRemoteUI();
       const track = stream.getVideoTracks()[0];
       const s = track.getSettings();
       log(`FPV feed live: ${s.width}×${s.height} @ ${Math.round(s.frameRate || 0)}fps`);
@@ -3266,6 +3288,7 @@
         $('noSignal').style.display = 'flex';
         log('FPV feed ended.', 'err');
         state.stream = null;
+        updateRemoteUI(); // FPV indicator goes red on the host remote panel
         // Reset to the default aspect until a new stream connects.
         $('viewport').style.aspectRatio = '';
       });
@@ -3277,6 +3300,7 @@
   function stopVideoStream() {
     if (state.recording) toggleRecording();
     if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
+    updateRemoteUI(); // clears the "🎥 FPV ready" line if we were hosting
   }
 
   /* =================================================================
