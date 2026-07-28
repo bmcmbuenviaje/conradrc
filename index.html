@@ -207,6 +207,10 @@
     .touch-zone.active { background: rgba(0, 229, 255, 0.16); border-color: var(--neon-cyan); }
     .touch-steer    { left: 3%; bottom: 15%; width: 34%; height: 22%; }
     .touch-throttle { right: 3%; bottom: 15%; width: 14%; height: 60%; }
+    /* When gyro is providing steering, the steer pad is inactive — fade it so
+       the user visually knows tilt is driving steering, not the pad. */
+    .touch-overlay.gyro-on .touch-steer { opacity: 0.35; pointer-events: none; }
+    .touch-overlay.gyro-on .touch-steer .touch-label::after { content: ' (via GYRO)'; color: var(--neon-cyan); }
     .touch-thumb {
       position: absolute;
       width: 42px; height: 42px; border-radius: 50%;
@@ -2253,6 +2257,7 @@
     }
     state.touch.gyro.enabled = !state.touch.gyro.enabled;
     $('touchGyroBadge').hidden = !state.touch.gyro.enabled;
+    $('touchOverlay').classList.toggle('gyro-on', state.touch.gyro.enabled);
     const b = $('qsGyro');
     if (b) { b.classList.toggle('on', state.touch.gyro.enabled); b.textContent = state.touch.gyro.enabled ? '📱 Gyro: ON' : '📱 Gyro: OFF'; }
     if (state.touch.gyro.enabled) calibrateGyro();
