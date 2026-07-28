@@ -228,6 +228,21 @@
       font-weight: 800; letter-spacing: 2px; font-size: 11px; border-radius: 8px;
       pointer-events: none;
     }
+    /* Action buttons stacked above the throttle pad so the driving hand can hit them. */
+    .touch-actions {
+      position: absolute; right: 3%; top: 6%;
+      display: flex; flex-direction: column; gap: 8px;
+      pointer-events: auto;
+    }
+    .touch-btn {
+      width: 100px; padding: 10px 8px; font-size: 12px;
+      background: rgba(5, 6, 10, 0.85); border: 2px solid var(--stroke); color: var(--text);
+      border-radius: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;
+      touch-action: manipulation;
+    }
+    .touch-btn.armed  { background: rgba(41, 255, 155, 0.28); border-color: var(--ok);        color: var(--ok); }
+    .touch-btn.estop  { background: rgba(255, 77, 94, 0.28);  border-color: var(--bad);       color: var(--bad); }
+    .touch-btn.rev-on { background: rgba(255, 176, 32, 0.28); border-color: var(--neon-amber); color: var(--neon-amber); }
     /* RPM shift-light strip + big gear indicator */
     .shift-lights { display:flex; gap:4px; justify-content:center; margin-bottom:5px; }
     .shift-lights span { width:11px; height:11px; border-radius:50%; background:rgba(255,255,255,0.12); transition:background .04s linear; }
@@ -694,6 +709,11 @@
           <div class="touch-zone touch-throttle" id="touchThrottle">
             <div class="touch-thumb" id="touchThrottleThumb"></div>
             <div class="touch-label">THROTTLE</div>
+          </div>
+          <!-- On-screen action buttons: reachable without opening any menu. -->
+          <div class="touch-actions">
+            <button class="touch-btn" id="touchArm">⏻ ARM</button>
+            <button class="touch-btn" id="touchRev">◄ REV</button>
           </div>
           <div class="touch-gyro-badge" id="touchGyroBadge" hidden>📱 GYRO</div>
         </div>
@@ -2106,6 +2126,7 @@
     rev.textContent = state.reverse ? '◄ REVERSE: ON' : '◄ REVERSE: OFF';
     // Also sync the in-viewport quick drawer if it's open.
     if ($('qsDrawer')?.classList.contains('open')) syncQuickSettings();
+    syncTouchButtons();
   }
 
   /* =================================================================
@@ -2139,6 +2160,16 @@
      ================================================================= */
   function isTouchDevice() {
     return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  }
+  // Keep the on-touch-overlay ARM + REV buttons in sync with global state.
+  // Called from updateSafetyUI() and updateDrivetrainUI().
+  function syncTouchButtons() {
+    const arm = $('touchArm'); const rev = $('touchRev'); if (!arm || !rev) return;
+    if (state.estop)      { arm.className = 'touch-btn estop'; arm.textContent = '■ STOP'; }
+    else if (state.armed) { arm.className = 'touch-btn armed'; arm.textContent = '⏻ DISARM'; }
+    else                  { arm.className = 'touch-btn';       arm.textContent = '⏻ ARM'; }
+    rev.className = 'touch-btn' + (state.reverse ? ' rev-on' : '');
+    rev.textContent = state.reverse ? '◄ REV: ON' : '◄ REV';
   }
   function setTouchActive(on) {
     state.touch.active = !!on;
@@ -2730,6 +2761,7 @@
     badge.className = 'safety-badge ' + (state.estop ? 'estop' : state.armed ? 'armed' : 'idle');
     $('hudArm').textContent = st;
     $('hudArm').style.color = state.estop ? 'var(--bad)' : state.armed ? 'var(--ok)' : 'var(--text-dim)';
+    syncTouchButtons();
   }
 
   /* =================================================================
@@ -3324,6 +3356,13 @@
     });
     setupTouchZone($('touchSteer'),    $('touchSteerThumb'),    'steerAxis',    'horizontal');
     setupTouchZone($('touchThrottle'), $('touchThrottleThumb'), 'throttleAxis', 'vertical');
+    // On-overlay ARM + REV buttons (touchend so keyboard focus doesn't get stolen mid-drive).
+    $('touchArm').addEventListener('click', () => {
+      if (state.estop) { setArmed(true); }          // in E-STOP mode: pressing ARM clears + arms
+      else             { setArmed(!state.armed); }  // otherwise just toggle
+    });
+    $('touchRev').addEventListener('click', toggleReverse);
+    syncTouchButtons();
     initGyroListener();
     // Auto-enable touch on touch-first devices (phones/tablets).
     if (isTouchDevice() && !state.controls.touchAlwaysOn) { setTouchActive(true); }
