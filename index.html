@@ -782,6 +782,23 @@
               </div>
               <div id="qsRemoteInfo" class="hint" hidden style="margin-top:6px;padding:8px;background:var(--bg-2);border:1px solid var(--stroke);border-radius:6px;font-size:12px;color:var(--text);"></div>
               <div class="hint">Pair over the internet via WebRTC. Host shows a 6-char PIN; the other device joins with it. Video + input stream end-to-end.</div>
+
+              <details style="margin-top:8px;">
+                <summary class="hint" style="cursor:pointer;user-select:none;">▸ Network options (Force TURN, custom relay)</summary>
+                <div style="margin-top:8px;padding:8px;background:var(--bg-2);border:1px solid var(--stroke);border-radius:6px;">
+                  <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+                    <input type="checkbox" id="qsRemoteForceTurn" />
+                    Force TURN relay (route ALL traffic via TURN)
+                  </label>
+                  <div class="hint" style="margin-top:4px;">Turn on when the same-WiFi direct P2P attempt fails — typical cause is router AP isolation blocking device-to-device traffic. Adds ~30 ms latency but always works if TURN is reachable.</div>
+
+                  <div class="hint" style="margin-top:10px;color:var(--text);">Custom TURN server (optional):</div>
+                  <input type="text" id="qsTurnUrl"  placeholder="turn:global.relay.metered.ca:80"           autocomplete="off" spellcheck="false" style="width:100%;margin-top:4px;padding:6px 8px;background:var(--bg-0);color:var(--text);border:1px solid var(--stroke);border-radius:6px;font-size:11px;font-family:Consolas,monospace;" />
+                  <input type="text" id="qsTurnUser" placeholder="username"                                   autocomplete="off" spellcheck="false" style="width:100%;margin-top:4px;padding:6px 8px;background:var(--bg-0);color:var(--text);border:1px solid var(--stroke);border-radius:6px;font-size:11px;font-family:Consolas,monospace;" />
+                  <input type="text" id="qsTurnCred" placeholder="credential"                                 autocomplete="off" spellcheck="false" style="width:100%;margin-top:4px;padding:6px 8px;background:var(--bg-0);color:var(--text);border:1px solid var(--stroke);border-radius:6px;font-size:11px;font-family:Consolas,monospace;" />
+                  <div class="hint" style="margin-top:6px;">Free 500 MB/month tier at metered.ca (works for video). Or run coturn on any VPS. Leave blank to use the built-in public TURN.</div>
+                </div>
+              </details>
             </div>
 
             <div class="qs-row" style="border-top:1px dashed var(--stroke); padding-top:10px;">
@@ -1071,6 +1088,11 @@
     hudLayout: {},            // per-widget {dx, dy} pixel offsets from default position
     touchAlwaysOn: false,     // force touch overlay on even on desktop
     gyroSensitivity: 45,      // degrees of phone tilt = full servo lock
+    // ---- Remote-session network options ----
+    remoteForceTurn: false,   // route ALL traffic through TURN (fixes same-WiFi AP isolation)
+    remoteTurnUrl: '',        // custom TURN URL (e.g. "turn:global.relay.metered.ca:80")
+    remoteTurnUser: '',       // custom TURN username
+    remoteTurnCred: '',       // custom TURN credential
   };
 
   // Actions bindable to a keyboard hotkey. The `fn` reads from live state.
@@ -2306,22 +2328,44 @@
   const REMOTE_ID_PREFIX = 'rcarcade-';
   const REMOTE_PIN_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no confusing chars
 
-  // ICE servers for WebRTC negotiation. STUN alone works when both peers are
-  // on the same LAN or behind cone NATs. TURN relays are REQUIRED when one
-  // peer is on cellular (Carrier-Grade NAT) or a corporate/hotel network with
-  // symmetric NAT — those block direct P2P hole-punching entirely.
+  // ICE servers for WebRTC negotiation.
+  //   - STUN: for direct P2P (works on LAN and cone-NAT networks).
+  //   - TURN: relay of last resort, required when peers are on cellular
+  //     (Carrier-Grade NAT), corporate/hotel WiFi with symmetric NAT, or when
+  //     the LAN itself blocks device-to-device traffic (AP/client isolation).
   //
-  // Uses OpenRelay's free public TURN as a fallback so it works out of the
-  // box on cellular. If you host lots of events or want more reliable relay,
-  // sign up at metered.ca (or run coturn on a VPS) and replace these creds.
-  const REMOTE_ICE_SERVERS = [
+  // If the user pasted their own TURN credentials into the UI, we use ONLY
+  // those (cleaner and more reliable than mixing with the flaky public
+  // OpenRelay). Otherwise fall back to public STUN + OpenRelay.
+  const REMOTE_STUN_ONLY = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'turn:openrelay.metered.ca:80',            username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443',           username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
   ];
+  const REMOTE_OPENRELAY = [
+    { urls: 'turn:openrelay.metered.ca:80',                 username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443',                username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp',  username: 'openrelayproject', credential: 'openrelayproject' },
+  ];
+  function iceServers() {
+    const c = state.controls;
+    if (c.remoteTurnUrl && c.remoteTurnUser && c.remoteTurnCred) {
+      // Custom TURN — replaces the flaky public relay entirely.
+      return [
+        ...REMOTE_STUN_ONLY,
+        { urls: c.remoteTurnUrl, username: c.remoteTurnUser, credential: c.remoteTurnCred },
+      ];
+    }
+    return [...REMOTE_STUN_ONLY, ...REMOTE_OPENRELAY];
+  }
+  function peerConfig() {
+    // 'relay' forces all traffic through TURN — bypasses AP isolation and other
+    // LAN-blocking scenarios. Costs latency but is deterministic.
+    return {
+      iceServers: iceServers(),
+      ...(state.controls.remoteForceTurn ? { iceTransportPolicy: 'relay' } : {}),
+    };
+  }
 
   function loadPeerJS() {
     if (window.Peer) return Promise.resolve(true);
@@ -2352,8 +2396,9 @@
       log('[LR] host: opening broker connection…');
       const peer = new window.Peer(REMOTE_ID_PREFIX + pin, {
         debug: 2,
-        config: { iceServers: REMOTE_ICE_SERVERS },
+        config: peerConfig(),
       });
+      log('[LR] host: ' + (state.controls.remoteForceTurn ? 'Force TURN ON — all traffic via relay' : 'STUN + TURN, direct P2P preferred'));
       peer.on('open', () => {
         state.remote.peer = peer; state.remote.pin = pin; state.remote.mode = 'host';
         log('🛰 Hosting remote session. PIN: ' + pin);
@@ -2415,8 +2460,9 @@
     log('[LR] client: opening broker connection…');
     const peer = new window.Peer(undefined, {
       debug: 2,
-      config: { iceServers: REMOTE_ICE_SERVERS },
+      config: peerConfig(),
     });
+    log('[LR] client: ' + (state.controls.remoteForceTurn ? 'Force TURN ON — all traffic via relay' : 'STUN + TURN, direct P2P preferred'));
     state.remote.peer = peer; state.remote.mode = 'client'; state.remote.pin = pin.toUpperCase();
     updateRemoteUI();
     peer.on('open', (id) => {
@@ -3415,6 +3461,22 @@
       setTimeout(() => $('remotePinInput').focus(), 50);
     });
     $('qsRemoteLeave').addEventListener('click', remoteLeave);
+    // Network options: load current values, persist on change. Take effect on the
+    // NEXT Host / Join click (existing sessions aren't reconfigured mid-flight).
+    $('qsRemoteForceTurn').checked = !!state.controls.remoteForceTurn;
+    $('qsTurnUrl').value  = state.controls.remoteTurnUrl  || '';
+    $('qsTurnUser').value = state.controls.remoteTurnUser || '';
+    $('qsTurnCred').value = state.controls.remoteTurnCred || '';
+    $('qsRemoteForceTurn').addEventListener('change', (e) => {
+      state.controls.remoteForceTurn = !!e.target.checked; saveControls();
+      log('Force TURN ' + (state.controls.remoteForceTurn ? 'ON' : 'OFF') + ' — takes effect on next Host/Join.');
+    });
+    const wireTurnField = (id, key) => $(id).addEventListener('change', (e) => {
+      state.controls[key] = e.target.value.trim(); saveControls();
+    });
+    wireTurnField('qsTurnUrl',  'remoteTurnUrl');
+    wireTurnField('qsTurnUser', 'remoteTurnUser');
+    wireTurnField('qsTurnCred', 'remoteTurnCred');
     $('remoteJoinConnect').addEventListener('click', () => {
       const pin = ($('remotePinInput').value || '').trim().toUpperCase();
       if (!/^[A-Z0-9]{4,10}$/.test(pin)) { $('remoteJoinErr').textContent = 'PIN must be 4–10 letters/numbers.'; return; }
