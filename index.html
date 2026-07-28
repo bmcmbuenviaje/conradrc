@@ -2278,35 +2278,54 @@
     if (state.remote.peer) remoteLeave();
     const tryOpen = () => {
       const pin = makePin();
+      log('[LR] host: opening broker connection…');
       const peer = new window.Peer(REMOTE_ID_PREFIX + pin, {
-        debug: 1,
+        debug: 2,
         config: { iceServers: REMOTE_ICE_SERVERS },
       });
       peer.on('open', () => {
         state.remote.peer = peer; state.remote.pin = pin; state.remote.mode = 'host';
         log('🛰 Hosting remote session. PIN: ' + pin);
+        log('[LR] host: broker connected, awaiting client…');
         updateRemoteUI();
       });
+      peer.on('disconnected', () => log('[LR] host: broker disconnected (network glitch); PeerJS will retry.'));
       peer.on('error', (err) => {
         if (err.type === 'unavailable-id') { peer.destroy(); tryOpen(); return; }
-        log('Remote host error: ' + (err.type || err.message), 'err');
+        log('[LR] host error: ' + (err.type || err.message || err), 'err');
       });
       peer.on('connection', (conn) => {
         state.remote.dataConn = conn;
-        conn.on('open', () => { state.remote.connected = true; updateRemoteUI(); log('🛰 Client joined this station.'); startHudSender(); });
+        log('[LR] host: incoming data connection (' + conn.peer + ')');
+        conn.on('open', () => {
+          state.remote.connected = true;
+          updateRemoteUI();
+          log('🛰 Client joined this station.');
+          startHudSender();
+        });
         conn.on('data', handleRemoteMessage);
+        conn.on('iceStateChanged', (s) => log('[LR] host ICE: ' + s));
         conn.on('close', () => {
           state.remote.connected = false; state.remote.dataConn = null; state.remote.remoteInput = null;
           if (state.remote.hudSender) { clearInterval(state.remote.hudSender); state.remote.hudSender = null; }
           updateRemoteUI(); log('🛰 Client left.');
         });
+        conn.on('error', (err) => log('[LR] host data error: ' + (err.type || err.message || err), 'err'));
+        // 15 s watchdog so a hung ICE stalemate becomes visible instead of silent "waiting…".
+        setTimeout(() => {
+          if (state.remote.dataConn === conn && !state.remote.connected) {
+            log('[LR] host: data channel did not open in 15 s — likely TURN failure. Client should retry.', 'err');
+          }
+        }, 15000);
       });
       peer.on('call', (call) => {
-        // Client is calling to receive our FPV. Answer with whatever stream we have (or an empty one).
-        const stream = state.stream || new MediaStream();
-        call.answer(stream);
+        // Client is asking for our FPV feed. Only answer if we have a stream — an empty
+        // MediaStream reply can trip SDP negotiation on some browsers.
+        if (!state.stream) { log('[LR] host: incoming FPV call, but no local stream. Start Frame Grabber first.'); return; }
+        call.answer(state.stream);
         state.remote.mediaCall = call;
         call.on('close', () => { state.remote.mediaCall = null; });
+        call.on('error', (err) => log('[LR] host media error: ' + (err.type || err.message || err), 'err'));
       });
     };
     tryOpen();
@@ -2316,29 +2335,52 @@
     if (!pin || pin.length < 4) { log('Enter a valid PIN.', 'err'); return; }
     try { await loadPeerJS(); } catch (e) { log(e.message, 'err'); return; }
     if (state.remote.peer) remoteLeave();
+    log('[LR] client: opening broker connection…');
     const peer = new window.Peer(undefined, {
-      debug: 1,
+      debug: 2,
       config: { iceServers: REMOTE_ICE_SERVERS },
     });
     state.remote.peer = peer; state.remote.mode = 'client'; state.remote.pin = pin.toUpperCase();
     updateRemoteUI();
-    peer.on('open', () => {
+    peer.on('open', (id) => {
+      log('[LR] client: broker connected as ' + id + ' — dialing host…');
       const hostId = REMOTE_ID_PREFIX + pin.toUpperCase();
-      // 1) Data channel for input + HUD JSON
-      const dataConn = peer.connect(hostId, { reliable: false });
+      // 1) Data channel for input + HUD JSON — reliable mode works better through TURN.
+      const dataConn = peer.connect(hostId, { reliable: true });
       state.remote.dataConn = dataConn;
+      dataConn.on('iceStateChanged', (s) => log('[LR] client ICE: ' + s));
       dataConn.on('open', () => {
         state.remote.connected = true; updateRemoteUI();
         log('🛰 Connected to remote station ' + state.remote.pin);
         startInputSender();
+        // Video is opt-in AFTER data is up — a failed media negotiation can't block control.
+        setTimeout(() => tryRemoteVideo(hostId), 500);
       });
+      // 15 s watchdog so a stuck "waiting…" surfaces a real error.
+      setTimeout(() => {
+        if (state.remote.dataConn === dataConn && !state.remote.connected) {
+          log('[LR] client: data channel did not open in 15 s. Likely TURN blocked or PIN mismatch.', 'err');
+          log('[LR] Check: (1) is the host still showing this exact PIN? (2) is OpenRelay TURN reachable from this network?', 'err');
+        }
+      }, 15000);
       dataConn.on('data', handleHudUpdate);
       dataConn.on('close', () => {
         state.remote.connected = false; updateRemoteUI(); log('🛰 Disconnected.');
       });
-      dataConn.on('error', (err) => log('Remote data error: ' + (err.type || err.message), 'err'));
-      // 2) Media call: send an empty stream, receive host's FPV back.
-      const call = peer.call(hostId, new MediaStream());
+      dataConn.on('error', (err) => log('[LR] client data error: ' + (err.type || err.message || err), 'err'));
+    });
+    peer.on('disconnected', () => log('[LR] client: broker disconnected; PeerJS will retry.'));
+    peer.on('error', (err) => log('[LR] client join error: ' + (err.type || err.message || err), 'err'));
+  }
+
+  // Opt-in FPV video: only tried after the data channel is confirmed alive.
+  // A failed media negotiation used to silently prevent the data channel from
+  // opening on some browsers; splitting them makes control robust to that.
+  function tryRemoteVideo(hostId) {
+    if (!state.remote.peer || !state.remote.connected) return;
+    try {
+      const stub = new MediaStream();
+      const call = state.remote.peer.call(hostId, stub);
       state.remote.mediaCall = call;
       call.on('stream', (remoteStream) => {
         $('fpv').srcObject = remoteStream;
@@ -2347,8 +2389,10 @@
         log('🛰 Remote FPV feed live.');
       });
       call.on('close', () => { setChip('chipVideo', false); $('fpv').srcObject = null; });
-    });
-    peer.on('error', (err) => log('Join error: ' + (err.type || err.message), 'err'));
+      call.on('error', (err) => log('[LR] client media error: ' + (err.type || err.message || err), 'err'));
+    } catch (e) {
+      log('[LR] client: could not start FPV call — ' + e.message, 'err');
+    }
   }
 
   function remoteLeave() {
