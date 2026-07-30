@@ -2334,29 +2334,26 @@
   //     (Carrier-Grade NAT), corporate/hotel WiFi with symmetric NAT, or when
   //     the LAN itself blocks device-to-device traffic (AP/client isolation).
   //
-  // If the user pasted their own TURN credentials into the UI, we use ONLY
-  // those (cleaner and more reliable than mixing with the flaky public
-  // OpenRelay). Otherwise fall back to public STUN + OpenRelay.
-  const REMOTE_STUN_ONLY = [
+  const REMOTE_STUN = [
+    { urls: 'stun:stun.relay.metered.ca:80' },
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
   ];
-  const REMOTE_OPENRELAY = [
-    { urls: 'turn:openrelay.metered.ca:80',                 username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443',                username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp',  username: 'openrelayproject', credential: 'openrelayproject' },
+  const REMOTE_TURN_DEFAULT = [
+    { urls: 'turn:global.relay.metered.ca:80',                  username: 'cd550701e7be0eb9a5492c13', credential: '7oT/gNawrUoXVzvE' },
+    { urls: 'turn:global.relay.metered.ca:80?transport=tcp',    username: 'cd550701e7be0eb9a5492c13', credential: '7oT/gNawrUoXVzvE' },
+    { urls: 'turn:global.relay.metered.ca:443',                 username: 'cd550701e7be0eb9a5492c13', credential: '7oT/gNawrUoXVzvE' },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp',  username: 'cd550701e7be0eb9a5492c13', credential: '7oT/gNawrUoXVzvE' },
   ];
   function iceServers() {
     const c = state.controls;
     if (c.remoteTurnUrl && c.remoteTurnUser && c.remoteTurnCred) {
-      // Custom TURN — replaces the flaky public relay entirely.
       return [
-        ...REMOTE_STUN_ONLY,
+        ...REMOTE_STUN,
         { urls: c.remoteTurnUrl, username: c.remoteTurnUser, credential: c.remoteTurnCred },
       ];
     }
-    return [...REMOTE_STUN_ONLY, ...REMOTE_OPENRELAY];
+    return [...REMOTE_STUN, ...REMOTE_TURN_DEFAULT];
   }
   function peerConfig() {
     // 'relay' forces all traffic through TURN — bypasses AP isolation and other
