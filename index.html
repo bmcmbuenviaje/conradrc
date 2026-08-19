@@ -147,9 +147,12 @@
     /* object-fit: contain preserves the whole frame instead of cropping.
        Combined with the runtime aspect-ratio update below, this fits the video
        edge-to-edge with no black bars in either direction. */
-    .viewport video { width: 100%; height: 100%; object-fit: contain; display: block; filter: saturate(1.1) contrast(1.05); }
+    .viewport video, .viewport img.fpv-net { width: 100%; height: 100%; object-fit: contain; display: block; filter: saturate(1.1) contrast(1.05); }
+    /* The MJPEG onboard-camera layer sits over the webcam <video>. Only one is
+       ever visible at a time (network cam hides the webcam and vice-versa). */
+    .viewport img.fpv-net { position: absolute; inset: 0; background: #000; }
     .viewport:fullscreen { aspect-ratio: auto; width: 100vw; height: 100vh; border-radius: 0; }
-    .viewport:fullscreen video { object-fit: contain; }
+    .viewport:fullscreen video, .viewport:fullscreen img.fpv-net { object-fit: contain; }
     .viewport .no-signal {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       color: var(--text-dim); font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
@@ -650,12 +653,32 @@
       <section class="panel">
         <h2>FPV Video</h2>
         <div class="kv"><span>Capture</span><b id="captureResVal">native (auto)</b></div>
-        <button id="btnVideo">Start Frame Grabber</button>
-        <div class="btn-row">
-          <select id="videoDevice" title="Switch capture source (chase-cam swap)" style="width:100%;padding:9px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
-            <option value="">— default source —</option>
-          </select>
+        <select id="fpvSource" title="Where the FPV picture comes from" style="width:100%;padding:9px;margin-bottom:10px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
+          <option value="webcam">PC Webcam / capture card</option>
+          <option value="net">Onboard camera (MJPEG URL)</option>
+        </select>
+
+        <!-- PC webcam controls -->
+        <div id="fpvWebcamCtl">
+          <button id="btnVideo">Start Frame Grabber</button>
+          <div class="btn-row">
+            <select id="videoDevice" title="Switch capture source (chase-cam swap)" style="width:100%;padding:9px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
+              <option value="">— default source —</option>
+            </select>
+          </div>
         </div>
+
+        <!-- Onboard MJPEG camera controls (ESP32-CAM or phone) -->
+        <div id="fpvNetCtl" style="display:none;">
+          <input id="netCamUrl" type="text" inputmode="url" placeholder="http://192.168.4.1:81/stream"
+            style="width:100%;padding:9px;margin-bottom:8px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
+          <button id="btnNetCam">Connect Camera</button>
+          <p style="font-size:10.5px;color:var(--text-dim);line-height:1.5;margin:8px 0 0;">
+            ESP32-CAM: <code>http://&lt;cam-ip&gt;:81/stream</code> · phone (IP Webcam): <code>http://&lt;ip&gt;:8080/video</code>.
+            <b style="color:var(--warn,#ffb020);">Onboard cams need the app opened over <code>http://</code> (not the GitHub Pages HTTPS link)</b> — see README.
+          </p>
+        </div>
+
         <button id="btnRecord" style="margin-top:10px;" disabled>⏺ Record</button>
       </section>
 
@@ -669,6 +692,7 @@
     <section class="stage">
       <div class="viewport" id="viewport">
         <video id="fpv" autoplay playsinline muted></video>
+        <img id="fpvNet" class="fpv-net" alt="" style="display:none;">
         <div class="no-signal" id="noSignal">◍ NO SIGNAL ◍</div>
         <div class="hud">
           <div class="corner tl" data-widget="tl">
@@ -2801,12 +2825,17 @@
      FPV SNAPSHOT
      ================================================================= */
   function snapshot() {
-    const video = $('fpv');
-    if (!video.srcObject || !video.videoWidth) { log('No FPV feed to capture.', 'err'); return; }
+    const usingNet = netCam.active;
+    const src = usingNet ? $('fpvNet') : $('fpv');
+    const w = usingNet ? src.naturalWidth  : src.videoWidth;
+    const h = usingNet ? src.naturalHeight : src.videoHeight;
+    if (!w || !h) { log('No FPV feed to capture.', 'err'); return; }
+    if (usingNet && netCam.tainted) { log('Snapshot needs a CORS-enabled camera (ESP32-CAM firmware sets this).', 'err'); return; }
     const cv = $('snapCanvas');
-    cv.width = video.videoWidth; cv.height = video.videoHeight;
+    cv.width = w; cv.height = h;
     const ctx = cv.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    try { ctx.drawImage(src, 0, 0); }
+    catch (_) { log('Snapshot blocked by camera CORS policy.', 'err'); return; }
     // Burn a minimal HUD line into the still.
     ctx.font = '16px monospace'; ctx.fillStyle = 'rgba(0,229,255,0.95)';
     const tag = (selected() ? selected().name : 'FPV') + '  ' + new Date().toLocaleTimeString();
@@ -3347,6 +3376,133 @@
   }
 
   /* =================================================================
+     ONBOARD / NETWORK CAMERA — MJPEG over HTTP (ESP32-CAM or phone)
+     -----------------------------------------------------------------
+     A camera riding on the car can't be a PC webcam — it streams over
+     WiFi. Motion-JPEG renders natively in an <img>, so we point one at
+     the stream URL. If the camera sends CORS headers (the ESP32-CAM
+     firmware does), we also sample it into a hidden <canvas> and expose
+     a captureStream() so the EXISTING record + remote-WebRTC paths work
+     unchanged — a remote phone viewer then sees the onboard feed too.
+     Cameras without CORS (e.g. phone IP-Webcam) still display; they just
+     can't be recorded or forwarded (canvas would be tainted).
+     ================================================================= */
+  const netCam = { active: false, url: '', tainted: true, pumpRaf: 0, lastDraw: 0,
+                   canvas: null, triedNoCors: false, announced: false };
+
+  function setFpvSource(kind) {
+    const net = kind === 'net';
+    $('fpvWebcamCtl').style.display = net ? 'none' : '';
+    $('fpvNetCtl').style.display    = net ? '' : 'none';
+    if (net) stopVideoStream();   // leaving webcam → release it
+    else     stopNetCam();        // leaving onboard cam → release it
+  }
+
+  function startNetCam() {
+    let url = ($('netCamUrl').value || '').trim();
+    if (!url) { log('Enter the camera stream URL first.', 'err'); return; }
+    if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+    // Mixed-content guard: an HTTPS page cannot load an http:// camera —
+    // the browser blocks it silently. Warn loudly with the fix.
+    if (location.protocol === 'https:' && /^http:\/\//i.test(url)) {
+      log('⚠ Page is HTTPS but the camera is HTTP — the browser will block it.', 'err');
+      log('   Open the app locally over http:// (README → “Onboard FPV”), then reconnect.', 'err');
+    }
+    stopNetCam();
+    netCam.url = url; netCam.triedNoCors = false; netCam.announced = false;
+    const img = $('fpvNet');
+    img.crossOrigin = 'anonymous';           // try CORS first (enables record/remote)
+    img.onload  = onNetCamLoad;
+    img.onerror = onNetCamError;
+    img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+    $('fpv').style.display = 'none';
+    img.style.display = 'block';
+    log('Connecting to onboard camera: ' + url);
+  }
+
+  function onNetCamLoad() {
+    const img = $('fpvNet');
+    netCam.active  = true;
+    netCam.tainted = !img.getAttribute('crossorigin'); // fell back to no-CORS ⇒ tainted
+    $('noSignal').style.display = 'none';
+    setChip('chipVideo', true);
+    if (img.naturalWidth && img.naturalHeight) {
+      $('viewport').style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+      if ($('captureResVal')) $('captureResVal').textContent = img.naturalWidth + '×' + img.naturalHeight + ' (MJPEG)';
+    }
+    if (!netCam.tainted && !netCam.pumpRaf) startNetCamPump();   // CORS-clean ⇒ enable record/remote
+    else if (netCam.tainted) { $('btnRecord').disabled = true; }
+    updateRemoteUI();
+    if (!netCam.announced) {
+      netCam.announced = true;
+      log('Onboard camera live' + (netCam.tainted ? ' (display-only — no CORS).' : '.'));
+    }
+  }
+
+  function onNetCamError() {
+    const img = $('fpvNet');
+    if (!netCam.triedNoCors) {
+      // Retry without CORS: many cams (phone IP-Webcam) don't send the headers.
+      // Display still works; record/remote won't (canvas would be tainted).
+      netCam.triedNoCors = true;
+      img.removeAttribute('crossorigin');
+      img.src = netCam.url + (netCam.url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+      return;
+    }
+    netCam.active = false;
+    setChip('chipVideo', false);
+    $('noSignal').style.display = 'flex';
+    log('Onboard camera failed. Check the URL, power, same-WiFi, and HTTP vs HTTPS.', 'err');
+  }
+
+  // Sample the MJPEG <img> into a canvas ~20 fps and expose captureStream() as
+  // state.stream, so recording + the remote-viewer WebRTC path work unchanged.
+  function startNetCamPump() {
+    const img = $('fpvNet');
+    netCam.canvas = netCam.canvas || document.createElement('canvas');
+    const cv = netCam.canvas;
+    const draw = (ts) => {
+      if (!netCam.active) return;
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (w && h && (ts - netCam.lastDraw) > 45) {   // ~20 fps is plenty for FPV
+        netCam.lastDraw = ts;
+        if (cv.width !== w) { cv.width = w; cv.height = h; }
+        try { cv.getContext('2d').drawImage(img, 0, 0, w, h); }
+        catch (_) { /* went tainted mid-stream — ignore */ }
+      }
+      netCam.pumpRaf = requestAnimationFrame(draw);
+    };
+    try {
+      state.stream = cv.captureStream(20);   // flows into record + WebRTC forward
+      $('btnRecord').disabled = false;
+    } catch (e) {
+      log('Canvas capture unsupported — record/remote forward disabled.', 'err');
+    }
+    netCam.pumpRaf = requestAnimationFrame(draw);
+  }
+
+  function stopNetCam() {
+    const img = $('fpvNet');
+    if (netCam.pumpRaf) { cancelAnimationFrame(netCam.pumpRaf); netCam.pumpRaf = 0; }
+    // Only tear down the stream WE created (the canvas one); never a webcam stream.
+    if (netCam.active && netCam.canvas && state.stream) {
+      if (state.recording) toggleRecording();
+      state.stream.getTracks().forEach((t) => t.stop());
+      state.stream = null;
+    }
+    img.onload = null; img.onerror = null;
+    img.removeAttribute('src');   // closes the MJPEG connection
+    img.style.display = 'none';
+    $('fpv').style.display = '';
+    netCam.active = false; netCam.announced = false;
+    setChip('chipVideo', false);
+    $('noSignal').style.display = 'flex';
+    $('viewport').style.aspectRatio = '';
+    $('btnRecord').disabled = !state.stream;
+    updateRemoteUI();
+  }
+
+  /* =================================================================
      FPV RECORDING — MediaRecorder → WebM
      ================================================================= */
   function toggleRecording() {
@@ -3432,6 +3588,10 @@
     $('btnRecord').addEventListener('click', toggleRecording);
     // Live camera-source switch: if a feed is running, restart it on the new device.
     $('videoDevice').addEventListener('change', () => { if (state.stream) startVideo(); });
+    // FPV source (PC webcam vs onboard MJPEG camera).
+    $('fpvSource').addEventListener('change', (e) => setFpvSource(e.target.value));
+    $('btnNetCam').addEventListener('click', startNetCam);
+    $('netCamUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') startNetCam(); });
     $('btnFullscreen').addEventListener('click', toggleFullscreen);
     $('btnSnapshot').addEventListener('click', snapshot);
     $('btnQuickSettings').addEventListener('click', toggleQuickSettings);

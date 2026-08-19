@@ -24,6 +24,7 @@ The whole control chain is browser → USB → radio → car:
 - **Drivetrain** — max-power cap, forward/reverse, 6-speed **manual gearbox** with a **10/20/40/60/80/100 %** per-gear curve, racing **RPM shift-lights**, and **simulated engine braking** (tunable strength).
 - **Safety** — arming (throttle-at-rest required), on-screen + spacebar **E-STOP**, and browser-side failsafe (disarms on tab blur / controller drop).
 - **Telemetry HUD** — gear, RPM, latency, packet loss, **battery voltage + low-battery warning**, RSSI.
+- **Onboard FPV** — stream from a **$6 ESP32-CAM** or a **spare phone** (MJPEG) right into the viewport, with snapshot / record / remote-forward when the camera allows CORS.
 - **Tuning** — steering trim / endpoint (EPA) / expo / invert, plus **per-car** power/transmission/trim/invert saved with each vehicle.
 - **Extras** — keyboard driving fallback, WebAudio engine sound, FPV fullscreen + snapshot, lap timer, ESC calibration helper, and best-effort multi-cabinet "in use" presence.
 
@@ -321,6 +322,36 @@ With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← 
 
 Follow the **[bench-test / commissioning checklist](BENCH_TEST.md)** — 10 sections, wheels-up first, ends with a slow first lap at 30 % power. Take 15 minutes; save a crashed car.
 
+### 🎥 Onboard FPV (live view from the car)
+
+The **FPV Video** panel has two sources:
+
+- **PC Webcam / capture card** — a camera plugged into the PC (or a USB capture card fed by an analog 5.8 GHz FPV receiver). This is the lowest-latency path.
+- **Onboard camera (MJPEG URL)** — a camera *on the car* that streams over WiFi. Two zero-to-cheap options:
+
+| Camera | Cost | Stream URL to paste | Notes |
+|---|---|---|---|
+| **ESP32-CAM** (AI-Thinker) | ~$6 | `http://192.168.4.1:81/stream` (AP mode) | Flash [`electronics/esp32cam_fpv`](electronics/esp32cam_fpv/esp32cam_fpv.ino). ~10 g, CORS-enabled → snapshot/record/remote all work. |
+| **Spare phone** (Android) | free | `http://<phone-ip>:8080/video` | Install the free **IP Webcam** app, Start server. Displays fine; no CORS → **display-only** (no record/remote-forward). |
+
+**Latency:** MJPEG over WiFi is ~120–300 ms depending on resolution — great for a **crawler**, marginal for high-speed racing (use analog 5.8 GHz + a capture card there).
+
+> ⚠️ **HTTPS mixed-content gotcha.** Browsers block an `http://` camera when the page is loaded over **HTTPS** (the GitHub Pages link). For onboard FPV, open the app **locally over http** instead:
+> ```bash
+> python -m http.server 8080
+> ```
+> then browse to `http://localhost:8080`. The app detects the mismatch and warns you in the log if you forget.
+
+**Multi-car at events — the golden rules.** Control (ESP-NOW) scales to a whole fleet, but **WiFi video does not share one router**. Keep each station self-contained:
+
+- **One access point (or PC hotspot / camera-AP) per station** — never everyone on one router.
+- **Space them on channels 1 / 6 / 11.** For the ESP32-CAM AP mode, set `AP_CHANNEL` per station and give each cam a unique `AP_SSID` (`RC-FPV-01`, `-02`, …).
+- **Keep cams at QVGA / low fps** — tiny bandwidth, more headroom, lower latency.
+- **Phones → prefer 5 GHz WiFi** — far more capacity in a crowded room.
+- Put the station's **ESP-NOW control on a channel away from its video AP** so they don't fight for the 2.4 GHz band.
+
+The ESP32-CAM firmware defaults to **AP mode**: the camera is its own tiny access point, the PC joins it, and the stream is always at `http://192.168.4.1:81/stream`. That's the cleanest per-station setup — no router, isolated spectrum. Switch `USE_AP = false` in the sketch to join an existing WiFi instead (it prints its IP to the Serial Monitor at boot).
+
 ### ⚙️ Drivetrain (power, reverse, gearbox)
 
 Sitting in the sidebar, the **Drivetrain** panel shapes the throttle before it's sent — every setting is applied client-side and reflected in the video HUD (`REV · GEAR 3/6 · 80%`):
@@ -501,8 +532,10 @@ conradrc/
     │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge + telemetry + presence
     ├── car_receiver/
     │   └── car_receiver.ino                    # Hobby-grade: ESP-NOW → servo (D18) + ESC (D19) + battery/RSSI
-    └── car_receiver_toygrade/
-        └── car_receiver_toygrade.ino           # Toy-grade: ESP-NOW → dual H-bridge (PWM drive + bang-bang steer)
+    ├── car_receiver_toygrade/
+    │   └── car_receiver_toygrade.ino           # Toy-grade: ESP-NOW → dual H-bridge (PWM drive + bang-bang steer)
+    └── esp32cam_fpv/
+        └── esp32cam_fpv.ino                    # AI-Thinker ESP32-CAM: onboard MJPEG FPV stream (CORS, AP or STA)
 ```
 
 ### Roster JSON schema (⇧ Import / ⇩ Export)
