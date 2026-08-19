@@ -345,12 +345,14 @@ The **FPV Video** panel has two sources:
 **Multi-car at events — the golden rules.** Control (ESP-NOW) scales to a whole fleet, but **WiFi video does not share one router**. Keep each station self-contained:
 
 - **One access point (or PC hotspot / camera-AP) per station** — never everyone on one router.
-- **Space them on channels 1 / 6 / 11.** For the ESP32-CAM AP mode, set `AP_CHANNEL` per station and give each cam a unique `AP_SSID` (`RC-FPV-01`, `-02`, …).
+- **Space them on channels 1 / 6 / 11.** The ESP32-CAM does this for you — just set **`STATION_ID`** (1, 2, 3, …) at the top of the sketch and it auto-derives a unique SSID (`RC-FPV-01`, `-02`, …) **and** a non-overlapping channel (1 → 6 → 11 → 1 …). Number your cars and the channels sort themselves out.
 - **Keep cams at QVGA / low fps** — tiny bandwidth, more headroom, lower latency.
 - **Phones → prefer 5 GHz WiFi** — far more capacity in a crowded room.
 - Put the station's **ESP-NOW control on a channel away from its video AP** so they don't fight for the 2.4 GHz band.
 
 The ESP32-CAM firmware defaults to **AP mode**: the camera is its own tiny access point, the PC joins it, and the stream is always at `http://192.168.4.1:81/stream`. That's the cleanest per-station setup — no router, isolated spectrum. Switch `USE_AP = false` in the sketch to join an existing WiFi instead (it prints its IP to the Serial Monitor at boot).
+
+**Camera-health chip.** While an onboard camera is connected, a small chip in the bottom-left of the viewport shows the feed's **live FPS** and **round-trip latency** (`📷 24fps · 6ms`). It turns amber on a weak feed (low FPS or RTT > 120 ms) and red **STALLED** if frames stop — an instant "is the camera OK?" readout. FPS/RTT need a CORS-enabled camera (the ESP32-CAM firmware qualifies; it answers a tiny `/ping`); a phone IP-Webcam shows `📷 display-only`.
 
 ### ⚙️ Drivetrain (power, reverse, gearbox)
 

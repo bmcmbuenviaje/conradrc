@@ -21,8 +21,17 @@
          SSID: "RC-FPV-01"   PASS: "rcarcade"
        Then the stream is ALWAYS at:  http://192.168.4.1:81/stream
        No router needed. Each car = its own AP on its own channel →
-       no cross-car congestion. Put each cam on a spaced channel
-       (1 / 6 / 11) at multi-station events (see AP_CHANNEL).
+       no cross-car congestion.
+
+       >>> STATION AUTO-SUGGEST <<<  Set ONE number — STATION_ID — and the
+       sketch derives a UNIQUE SSID and a NON-OVERLAPPING channel for you,
+       cycling the only three that don't overlap on 2.4 GHz (1 / 6 / 11):
+         STATION_ID 1 -> "RC-FPV-01"  ch 1
+         STATION_ID 2 -> "RC-FPV-02"  ch 6
+         STATION_ID 3 -> "RC-FPV-03"  ch 11
+         STATION_ID 4 -> "RC-FPV-04"  ch 1   (wraps)
+       So at an event you just number the cars 1,2,3,… and channels sort
+       themselves out. The chosen SSID + channel print to Serial at boot.
 
    USE_AP = false (join an existing WiFi):
        Fill in STA_SSID / STA_PASS. The cam prints its DHCP IP to the
@@ -49,10 +58,15 @@
 /* ---------------- NETWORK MODE ---------------- */
 static const bool USE_AP = true;                 // true = own AP, false = join WiFi
 
-// AP-mode settings (USE_AP = true)
-static const char *AP_SSID    = "RC-FPV-01";     // make unique per car: -01, -02, ...
-static const char *AP_PASS    = "rcarcade";      // >= 8 chars, or "" for open
-static const int   AP_CHANNEL = 1;               // space stations on 1 / 6 / 11
+// AP-mode settings (USE_AP = true) — set STATION_ID only; SSID + channel auto-derive.
+static const int   STATION_ID   = 1;             // 1,2,3,… unique per station/car
+static const char *AP_SSID_BASE = "RC-FPV";      // SSID becomes "<BASE>-NN"
+static const char *AP_PASS      = "rcarcade";    // >= 8 chars, or "" for open
+static const int   CH_MAP[3]    = { 1, 6, 11 };  // the only non-overlapping 2.4 GHz channels
+
+// Derived at boot from STATION_ID (filled in setup()).
+static char apSsid[24] = {0};
+static int  apChannel  = 1;
 
 // STA-mode settings (USE_AP = false)
 static const char *STA_SSID = "YOUR_WIFI";
@@ -157,6 +171,17 @@ static esp_err_t stream_handler(httpd_req_t *req) {
   return res;
 }
 
+/* ---------------- /ping handler (port 81) ----------------
+   Tiny, fast reply so the web app can measure round-trip latency to the
+   camera (the controllable, network part of glass-to-glass lag). CORS so
+   the app can read the timing. */
+static esp_err_t ping_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_send(req, "1", 1);
+}
+
 /* ---------------- / index handler (port 80) ---------------- */
 static esp_err_t index_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/html");
@@ -185,12 +210,14 @@ static void startServers() {
     httpd_register_uri_handler(index_httpd, &idx);
   }
 
-  // Stream on port 81
+  // Stream + ping on port 81
   cfg.server_port = 81;
   cfg.ctrl_port   = 32081;
   if (httpd_start(&stream_httpd, &cfg) == ESP_OK) {
     httpd_uri_t st = { "/stream", HTTP_GET, stream_handler, NULL };
     httpd_register_uri_handler(stream_httpd, &st);
+    httpd_uri_t pg = { "/ping", HTTP_GET, ping_handler, NULL };
+    httpd_register_uri_handler(stream_httpd, &pg);
   }
 }
 
@@ -204,10 +231,14 @@ void setup() {
   if (!initCamera()) { Serial.println("Camera init failed — check ribbon + 5V power."); delay(3000); ESP.restart(); }
 
   if (USE_AP) {
+    // Auto-derive a unique SSID + a non-overlapping channel from STATION_ID.
+    int id = STATION_ID < 1 ? 1 : STATION_ID;
+    snprintf(apSsid, sizeof(apSsid), "%s-%02d", AP_SSID_BASE, id);
+    apChannel = CH_MAP[(id - 1) % 3];
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, (strlen(AP_PASS) >= 8 ? AP_PASS : NULL), AP_CHANNEL);
+    WiFi.softAP(apSsid, (strlen(AP_PASS) >= 8 ? AP_PASS : NULL), apChannel);
     IPAddress ip = WiFi.softAPIP();
-    Serial.printf("AP up: SSID=\"%s\"  ch=%d\n", AP_SSID, AP_CHANNEL);
+    Serial.printf("AP up: SSID=\"%s\"  ch=%d  (station %d)\n", apSsid, apChannel, id);
     Serial.print("Stream URL: http://"); Serial.print(ip); Serial.println(":81/stream");
   } else {
     WiFi.mode(WIFI_STA);

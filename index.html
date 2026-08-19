@@ -158,6 +158,19 @@
       color: var(--text-dim); font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
       background: repeating-linear-gradient(0deg, #060a12, #060a12 2px, #0a0f1c 2px, #0a0f1c 4px);
     }
+    /* Onboard-camera health chip (FPS + RTT) */
+    .cam-health {
+      position: absolute; left: 12px; bottom: 12px; z-index: 6;
+      padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+      font-family: Consolas, monospace; letter-spacing: 0.4px; white-space: nowrap;
+      background: rgba(6,10,18,0.72); border: 1px solid var(--stroke);
+      color: var(--ok, #35e08a); text-shadow: 0 0 6px rgba(0,0,0,0.9);
+      pointer-events: none;
+    }
+    .cam-health.warn { color: var(--warn, #ffb020); border-color: rgba(255,176,32,0.5); }
+    .cam-health.bad  { color: var(--bad, #ff4d5e);  border-color: rgba(255,77,94,0.5); }
+    .cam-health.idle { color: var(--text-dim); }
+
     /* HUD overlay */
     .hud { position: absolute; inset: 0; pointer-events: none; font-variant-numeric: tabular-nums; }
     .hud .corner { position: absolute; padding: 10px 14px; font-size: 12px; text-shadow: 0 0 6px rgba(0,0,0,0.9); }
@@ -727,6 +740,8 @@
         <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
         <button class="vp-btn vp-cog" id="btnQuickSettings" title="Quick settings (Tab)">⚙</button>
         <button class="vp-stop" id="btnEstopHud" title="Emergency stop (Space)">■ STOP</button>
+        <!-- Onboard-camera health: FPS + round-trip latency. Only while a network cam is connected. -->
+        <div class="cam-health" id="camHealth" style="display:none;">📷 —</div>
 
         <!-- Touch controls (phone / tablet). Auto-shows on touch devices. -->
         <div class="touch-overlay" id="touchOverlay">
@@ -3388,7 +3403,10 @@
      can't be recorded or forwarded (canvas would be tainted).
      ================================================================= */
   const netCam = { active: false, url: '', tainted: true, pumpRaf: 0, lastDraw: 0,
-                   canvas: null, triedNoCors: false, announced: false };
+                   canvas: null, triedNoCors: false, announced: false,
+                   // health telemetry
+                   frames: 0, lastSig: -1, lastFrameAt: 0, fps: 0, rtt: null,
+                   healthTimer: 0, pingTimer: 0, pinging: false };
 
   function setFpvSource(kind) {
     const net = kind === 'net';
@@ -3431,7 +3449,7 @@
       if ($('captureResVal')) $('captureResVal').textContent = img.naturalWidth + '×' + img.naturalHeight + ' (MJPEG)';
     }
     if (!netCam.tainted && !netCam.pumpRaf) startNetCamPump();   // CORS-clean ⇒ enable record/remote
-    else if (netCam.tainted) { $('btnRecord').disabled = true; }
+    else if (netCam.tainted) { $('btnRecord').disabled = true; updateCamHealth(); }
     updateRemoteUI();
     if (!netCam.announced) {
       netCam.announced = true;
@@ -3461,28 +3479,93 @@
     const img = $('fpvNet');
     netCam.canvas = netCam.canvas || document.createElement('canvas');
     const cv = netCam.canvas;
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
     const draw = (ts) => {
       if (!netCam.active) return;
       const w = img.naturalWidth, h = img.naturalHeight;
-      if (w && h && (ts - netCam.lastDraw) > 45) {   // ~20 fps is plenty for FPV
+      // Draw at ~30 fps so we don't cap the measured FPS below the camera's rate.
+      if (w && h && (ts - netCam.lastDraw) > 30) {
         netCam.lastDraw = ts;
         if (cv.width !== w) { cv.width = w; cv.height = h; }
-        try { cv.getContext('2d').drawImage(img, 0, 0, w, h); }
-        catch (_) { /* went tainted mid-stream — ignore */ }
+        try {
+          ctx.drawImage(img, 0, 0, w, h);
+          // Count a NEW frame only when the picture actually changed. JPEG sensor
+          // noise means live frames always differ slightly; a frozen stream repeats
+          // the exact bytes → signature stays put → we detect the stall.
+          const sw = Math.min(w, 32), sh = Math.min(h, 2);
+          const d = ctx.getImageData(0, 0, sw, sh).data;
+          let sig = 0;
+          for (let i = 0; i < d.length; i += 4) sig = (sig + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7) | 0;
+          if (sig !== netCam.lastSig) { netCam.lastSig = sig; netCam.frames++; netCam.lastFrameAt = ts; }
+        } catch (_) { /* went tainted mid-stream — ignore */ }
       }
       netCam.pumpRaf = requestAnimationFrame(draw);
     };
     try {
-      state.stream = cv.captureStream(20);   // flows into record + WebRTC forward
+      state.stream = cv.captureStream(30);   // flows into record + WebRTC forward
       $('btnRecord').disabled = false;
     } catch (e) {
       log('Canvas capture unsupported — record/remote forward disabled.', 'err');
     }
     netCam.pumpRaf = requestAnimationFrame(draw);
+    startCamHealth();
+  }
+
+  /* Camera-health chip: FPS from the frame-change counter, RTT from a tiny
+     /ping to the camera. Both only meaningful for a CORS-clean cam (the pump
+     runs; ping is readable). Display-only cams show a static chip. */
+  function startCamHealth() {
+    stopCamHealth();
+    netCam.frames = 0; netCam.lastFrameAt = performance.now(); netCam.fps = 0; netCam.rtt = null;
+    netCam.healthTimer = setInterval(() => {
+      netCam.fps = netCam.frames; netCam.frames = 0;
+      updateCamHealth();
+    }, 1000);
+    pingCam();  // first ping now, then on an interval
+    netCam.pingTimer = setInterval(pingCam, 2000);
+    updateCamHealth();
+  }
+  function stopCamHealth() {
+    if (netCam.healthTimer) { clearInterval(netCam.healthTimer); netCam.healthTimer = 0; }
+    if (netCam.pingTimer)   { clearInterval(netCam.pingTimer);   netCam.pingTimer = 0; }
+  }
+  async function pingCam() {
+    if (netCam.pinging || !netCam.active || netCam.tainted) return;
+    let origin;
+    try { origin = new URL(netCam.url).origin; } catch (_) { return; }
+    netCam.pinging = true;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2000);
+    const t0 = performance.now();
+    try {
+      await fetch(origin + '/ping?_t=' + Date.now(), { cache: 'no-store', signal: ctrl.signal });
+      netCam.rtt = Math.round(performance.now() - t0);
+    } catch (_) {
+      netCam.rtt = null;  // no /ping endpoint (older firmware) or unreachable
+    } finally {
+      clearTimeout(timer); netCam.pinging = false;
+    }
+  }
+  function updateCamHealth() {
+    const chip = $('camHealth');
+    if (!chip) return;
+    if (!netCam.active) { chip.style.display = 'none'; return; }
+    chip.style.display = '';
+    if (netCam.tainted) {   // display-only: no FPS/RTT available
+      chip.className = 'cam-health idle';
+      chip.textContent = '📷 display-only';
+      return;
+    }
+    const stalled = (performance.now() - netCam.lastFrameAt) > 1500;
+    if (stalled) { chip.className = 'cam-health bad'; chip.textContent = '📷 STALLED'; return; }
+    const rtt = netCam.rtt == null ? '—' : netCam.rtt + 'ms';
+    chip.textContent = '📷 ' + netCam.fps + 'fps · ' + rtt;
+    chip.className = 'cam-health' + (netCam.fps < 8 ? ' warn' : (netCam.rtt != null && netCam.rtt > 120 ? ' warn' : ''));
   }
 
   function stopNetCam() {
     const img = $('fpvNet');
+    stopCamHealth();
     if (netCam.pumpRaf) { cancelAnimationFrame(netCam.pumpRaf); netCam.pumpRaf = 0; }
     // Only tear down the stream WE created (the canvas one); never a webcam stream.
     if (netCam.active && netCam.canvas && state.stream) {
@@ -3496,6 +3579,7 @@
     $('fpv').style.display = '';
     netCam.active = false; netCam.announced = false;
     setChip('chipVideo', false);
+    $('camHealth').style.display = 'none';
     $('noSignal').style.display = 'flex';
     $('viewport').style.aspectRatio = '';
     $('btnRecord').disabled = !state.stream;
