@@ -40,20 +40,76 @@ static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K
    car — mixing LR and normal means one side can't hear the other. */
 static const bool     ENABLE_LR_MODE = true;
 
-/* ---------- Pin map ---------- */
-static const int PIN_STEER       = 18;  // D18 — steering servo signal
-static const int PIN_ESC         = 19;  // D19 — ESC / drive motor signal
-static const int PIN_BATTERY     = 34;  // ADC1 — battery sense via divider (optional)
-
-// Lighting outputs — leave unwired if you don't have that light.
-// Drive small LEDs directly through a ~330 ohm resistor.
-// For anything brighter (headlight arrays, brake bars): use a MOSFET.
-static const int PIN_HEADLIGHT   = 22;  // white LEDs, front
-static const int PIN_BRAKELIGHT  = 23;  // red LEDs, rear
-static const int PIN_SIGNAL_L    = 21;  // amber LED, front-left + rear-left
-static const int PIN_SIGNAL_R    = 5;   // amber LED, front-right + rear-right
-static const int PIN_REVERSE_LIGHT = 4; // white LEDs, rear
-static const int PIN_HORN        = 25;  // piezo buzzer or siren MOSFET
+/* ================================================================
+   PIN MAP — auto-selected per ESP32 variant.
+   ----------------------------------------------------------------
+   The SAME sketch flashes on any WiFi ESP32 (classic, S2, S3, C3,
+   C6). Arduino picks the block below from your Tools -> Board choice.
+   These are SANE DEFAULTS on broken-out, non-strapping GPIOs — but
+   boards vary, so VERIFY against your board's silkscreen and edit the
+   numbers here if a pin isn't exposed. Pins you don't use (e.g. lights
+   on a mini board) can be left unwired.
+   Full per-board table: docs/PINOUTS.md
+   ================================================================ */
+#if   defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define BOARD_NAME "ESP32-S3"
+  #define PIN_STEER 4
+  #define PIN_ESC   5
+  #define PIN_HEADLIGHT 6
+  #define PIN_BRAKELIGHT 7
+  #define PIN_SIGNAL_L 15
+  #define PIN_SIGNAL_R 16
+  #define PIN_REVERSE_LIGHT 17
+  #define PIN_HORN 18
+  #define PIN_BATTERY 1          // ADC1
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+  #define BOARD_NAME "ESP32-S2"
+  #define PIN_STEER 4
+  #define PIN_ESC   5
+  #define PIN_HEADLIGHT 6
+  #define PIN_BRAKELIGHT 7
+  #define PIN_SIGNAL_L 8
+  #define PIN_SIGNAL_R 9
+  #define PIN_REVERSE_LIGHT 10
+  #define PIN_HORN 11
+  #define PIN_BATTERY 1          // ADC1
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  // C3 "Super Mini": few pins. Avoid strapping 2/8/9 and USB 18/19.
+  #define BOARD_NAME "ESP32-C3"
+  #define PIN_STEER 3
+  #define PIN_ESC   4
+  #define PIN_HEADLIGHT 5
+  #define PIN_BRAKELIGHT 6
+  #define PIN_SIGNAL_L 7
+  #define PIN_SIGNAL_R 10
+  #define PIN_REVERSE_LIGHT 20   // UART0 RX — free on native-USB boards
+  #define PIN_HORN 21            // UART0 TX — free on native-USB boards
+  #define PIN_BATTERY 0          // ADC1
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+  #define BOARD_NAME "ESP32-C6"
+  #define PIN_STEER 2
+  #define PIN_ESC   3
+  #define PIN_HEADLIGHT 4
+  #define PIN_BRAKELIGHT 5
+  #define PIN_SIGNAL_L 6
+  #define PIN_SIGNAL_R 7
+  #define PIN_REVERSE_LIGHT 18
+  #define PIN_HORN 19
+  #define PIN_BATTERY 0          // ADC1
+#else  // classic ESP32 (WROOM/WROVER, D1 Mini) — the original mapping
+  #define BOARD_NAME "ESP32"
+  #define PIN_STEER 18           // D18 — steering servo signal
+  #define PIN_ESC   19           // D19 — ESC / drive motor signal
+  #define PIN_HEADLIGHT 22       // white LEDs, front
+  #define PIN_BRAKELIGHT 23      // red LEDs, rear
+  #define PIN_SIGNAL_L 21        // amber, front-left + rear-left
+  #define PIN_SIGNAL_R 5         // amber, front-right + rear-right
+  #define PIN_REVERSE_LIGHT 4    // white LEDs, rear
+  #define PIN_HORN 25            // piezo buzzer / siren MOSFET
+  #define PIN_BATTERY 34         // ADC1 — input-only pin
+#endif
+// Lighting outputs: small LEDs via a ~330 ohm resistor; MOSFET for bright arrays.
+// Leave any light pin unwired if that light doesn't exist on your car.
 
 /* ---------- Battery sense (optional) ---------- */
 static const float BATTERY_DIVIDER = 4.03f;
@@ -241,6 +297,8 @@ void setup() {
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  Serial.print("BOARD,");
+  Serial.println(BOARD_NAME);
   Serial.print("READY,RECEIVER,");
   Serial.println(macStr);
 }

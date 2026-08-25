@@ -40,21 +40,70 @@ static const uint8_t  LMK[16] = { 'R','C','A','R','C','A','D','E','_','L','M','K
 /* ---------- Long Range (LR) mode (must match master) ---------- */
 static const bool     ENABLE_LR_MODE = true;
 
-/* ---------- Drive motor (H-bridge A) ---------- */
-static const int AIN1 = 25;
-static const int AIN2 = 26;
-static const int PWMA = 27;
-
-/* ---------- Steering motor (H-bridge B, bang-bang) ---------- */
-static const int BIN1 = 32;
-static const int BIN2 = 33;
-static const int PWMB = 14;
-
-/* ---------- Standby (TB6612 STBY; tie high) ---------- */
-static const int STBY = 13;
+/* ================================================================
+   PIN MAP — auto-selected per ESP32 variant.
+   ----------------------------------------------------------------
+   Same sketch flashes on any WiFi ESP32 (classic, S2, S3, C3, C6);
+   Arduino picks the block from your Tools -> Board choice. Sane
+   defaults on broken-out, non-strapping GPIOs — VERIFY against your
+   board's silkscreen and edit if a pin isn't exposed. If your H-bridge
+   has no STBY pin (e.g. L298N/DRV8833), just leave STBY unwired.
+   Full per-board table: docs/PINOUTS.md
+   ================================================================ */
+#if   defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define BOARD_NAME "ESP32-S3"
+  #define AIN1 4
+  #define AIN2 5
+  #define PWMA 6
+  #define BIN1 7
+  #define BIN2 15
+  #define PWMB 16
+  #define STBY 17
+  #define PIN_BATTERY 1
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+  #define BOARD_NAME "ESP32-S2"
+  #define AIN1 4
+  #define AIN2 5
+  #define PWMA 6
+  #define BIN1 7
+  #define BIN2 8
+  #define PWMB 9
+  #define STBY 10
+  #define PIN_BATTERY 1
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  // C3 "Super Mini": avoid strapping 2/8/9 and USB 18/19.
+  #define BOARD_NAME "ESP32-C3"
+  #define AIN1 3
+  #define AIN2 4
+  #define PWMA 5
+  #define BIN1 6
+  #define BIN2 7
+  #define PWMB 10
+  #define STBY 20
+  #define PIN_BATTERY 0
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+  #define BOARD_NAME "ESP32-C6"
+  #define AIN1 2
+  #define AIN2 3
+  #define PWMA 4
+  #define BIN1 5
+  #define BIN2 6
+  #define PWMB 7
+  #define STBY 18
+  #define PIN_BATTERY 0
+#else  // classic ESP32 (WROOM/WROVER, D1 Mini) — original TB6612 mapping
+  #define BOARD_NAME "ESP32"
+  #define AIN1 25
+  #define AIN2 26
+  #define PWMA 27
+  #define BIN1 32
+  #define BIN2 33
+  #define PWMB 14
+  #define STBY 13
+  #define PIN_BATTERY 34
+#endif
 
 /* ---------- Battery sense (optional) ---------- */
-static const int   PIN_BATTERY     = 34;
 static const float BATTERY_DIVIDER = 4.03f;
 static const bool  BATTERY_ENABLED = false;
 
@@ -215,6 +264,8 @@ void setup() {
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  Serial.print("BOARD,");
+  Serial.println(BOARD_NAME);
   Serial.print("READY,RECEIVER_TOY,");
   Serial.println(macStr);
 }

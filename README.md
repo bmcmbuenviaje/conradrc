@@ -105,9 +105,9 @@ The whole control chain is browser → USB → radio → car:
 ### Vehicle side (one per car)
 | Item | Notes |
 |------|-------|
-| **ESP32 chip/board** | One per RC car. |
-| **Proportional steering servo** | Signal → **GPIO 18 (D18)**. |
-| **ESC + brushed/brushless motor** *(or a motor driver)* | Signal → **GPIO 19 (D19)**. |
+| **ESP32 chip/board** | One per RC car. **Any WiFi ESP32 works** — classic ESP32, S2, S3, **C3/C6 "mini"** — so a mini board can drive a mini RC. The receiver auto-detects the chip and picks pins; see **[docs/PINOUTS.md](docs/PINOUTS.md)**. (ESP32-H2 has no WiFi and ESP8266 uses a different API — neither works.) |
+| **Proportional steering servo** | Signal → steering pin (classic ESP32: **GPIO 18**; other boards: see [PINOUTS](docs/PINOUTS.md)). |
+| **ESC + brushed/brushless motor** *(or a motor driver)* | Signal → ESC pin (classic ESP32: **GPIO 19**; other boards: see [PINOUTS](docs/PINOUTS.md)). |
 | **RC car chassis** | Hobby-grade or a modified toy-grade car. |
 | **Battery / BEC** | Powers the ESP32, servo, and ESC. **Do not** power the servo/ESC from the ESP32's 3.3 V rail. |
 | **5.8 GHz FPV camera + video transmitter** | Streams video back to the desk-side frame grabber. |
@@ -528,7 +528,8 @@ conradrc/
 ├── README.md                                   # This file
 ├── docs/
 │   ├── wiring.svg                              # Hobby-grade wiring diagram
-│   └── wiring_toygrade.svg                     # Toy-grade H-bridge wiring diagram
+│   ├── wiring_toygrade.svg                     # Toy-grade H-bridge wiring diagram
+│   └── PINOUTS.md                              # Per-board pin maps (ESP32 / S2 / S3 / C3 / C6)
 └── electronics/
     ├── master_transmitter/
     │   └── master_transmitter.ino              # Desk-side ESP32: serial ↔ ESP-NOW bridge + telemetry + presence
