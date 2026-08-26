@@ -313,6 +313,16 @@ In **Test & Map Controls** pick how reverse engages:
 
 On phones/tablets the throttle pad is a **centered vertical stick** by default: **push up = forward, pull down = reverse**, release = neutral (no separate REV button needed). Reverse direction rides along over a **remote session** too, so a phone driving a PC station reverses correctly. Prefer the old bottom-rest pad + REV button? Uncheck **Centered touch throttle** in Test & Map Controls.
 
+### 🏁 Lap timing + leaderboard
+
+Wire an **IR break-beam lap gate** across the start/finish line (flash [`electronics/lap_gate`](electronics/lap_gate/lap_gate.ino) to any ESP32 + a cheap IR beam sensor). It broadcasts each crossing over ESP-NOW; the master relays it as `LAP,<gate>,<seq>`, and the app:
+
+- **auto-starts** the race timer on the first crossing (the start/finish line),
+- **logs each lap** and tracks best lap, and
+- keeps a **🏆 Leaderboard** of the best lap per car, saved between sessions. Multiple cabinets on the **same PC** merge their bests live (via BroadcastChannel).
+
+> Requires **reflashing the master transmitter** (it now relays `LAP` frames). One gate per start/finish line; it attributes each lap to the car currently selected on that station (one car per station — the arcade-cabinet model). Cross-*machine* leaderboards would need a shared backend or an ESP-NOW relay — ask if you want that.
+
 ### 🎚️ Extras
 
 - **Steering Tuning panel** — trim (center), endpoint/travel (EPA), expo, and invert. All live and saved.
@@ -549,8 +559,10 @@ conradrc/
     │   └── car_receiver.ino                    # Hobby-grade: ESP-NOW → servo (D18) + ESC (D19) + battery/RSSI
     ├── car_receiver_toygrade/
     │   └── car_receiver_toygrade.ino           # Toy-grade: ESP-NOW → dual H-bridge (PWM drive + bang-bang steer)
-    └── esp32cam_fpv/
-        └── esp32cam_fpv.ino                    # AI-Thinker ESP32-CAM: onboard MJPEG FPV stream (CORS, AP or STA)
+    ├── esp32cam_fpv/
+    │   └── esp32cam_fpv.ino                    # AI-Thinker ESP32-CAM: onboard MJPEG FPV stream (CORS, AP or STA)
+    └── lap_gate/
+        └── lap_gate.ino                        # IR break-beam lap gate: broadcasts crossings over ESP-NOW
 ```
 
 ### Roster JSON schema (⇧ Import / ⇩ Export)

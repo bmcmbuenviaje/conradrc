@@ -674,6 +674,13 @@
           <button id="btnTimerReset" class="danger">Reset</button>
         </div>
         <div class="lap-list" id="lapList"></div>
+        <p style="font-size:10.5px;color:var(--text-dim);margin:8px 0 0;">Wire an <b>IR lap gate</b> (see <code>electronics/lap_gate</code>) and it auto-starts timing on the first crossing, then logs each lap.</p>
+      </section>
+
+      <section class="panel">
+        <h2>🏆 Leaderboard</h2>
+        <div class="lap-list" id="leaderboard"></div>
+        <button id="btnClearBoard" class="danger" style="margin-top:10px;">Clear Leaderboard</button>
       </section>
 
       <section class="panel">
@@ -1606,6 +1613,12 @@
         state.claims[car] = { cabinet: 'master:' + (master || '?'), ts: Date.now() };
       } else if (state.claims[car]) { delete state.claims[car]; }
       renderGrid();
+      return;
+    }
+    if (line.startsWith('LAP')) {
+      // LAP,<gate>,<seq>  — an IR lap gate reported a crossing (relayed by the master)
+      const p = line.split(',');
+      onGateCrossing(p[1] || '0');
       return;
     }
     log('RX ◂ ' + line);
@@ -3218,6 +3231,7 @@
     T.laps.push(lap);
     if (T.best === null || lap < T.best) T.best = lap;
     renderLaps();
+    recordBestLap(lap);   // update the persistent per-car leaderboard
   }
   function timerReset() {
     state.timer = { running: false, start: 0, elapsed: 0, laps: [], best: null };
@@ -3233,6 +3247,94 @@
     ).reverse().join('') || '<div class="lap-row"><span style="color:var(--text-dim)">No laps yet</span></div>';
   }
   function timerTick() { $('lapCurrent').textContent = fmtTime(timerNow()); }
+
+  /* =================================================================
+     LAP GATE + LEADERBOARD
+     -----------------------------------------------------------------
+     An IR beam-break gate broadcasts a crossing over ESP-NOW; the master
+     relays it to the browser as "LAP,<gate>,<seq>". The FIRST crossing
+     starts the timer (start/finish line); each later crossing completes a
+     lap. Best lap per car is persisted and shared across same-machine tabs
+     (multi-cabinet) via BroadcastChannel to build a combined leaderboard.
+     ================================================================= */
+  const LAP_MIN_MS = 3000;   // ignore crossings closer than this (bounce / double-trip)
+
+  function onGateCrossing(gate) {
+    const now = performance.now();
+    if (now - (state.lastGateAt || 0) < LAP_MIN_MS) return;   // debounce
+    state.lastGateAt = now;
+    const T = state.timer;
+    if (!T.running) {
+      timerReset();
+      timerToggle();                       // first crossing = start/finish line
+      log('🏁 Gate ' + gate + ' — timing started on the start/finish line.');
+      return;
+    }
+    timerLap();   // pushes the lap + records best via recordBestLap()
+    log('🏁 Lap ' + T.laps.length + ' — ' + fmtTime(T.laps[T.laps.length - 1]));
+  }
+
+  function loadBestLaps() {
+    try { state.bestLaps = JSON.parse(localStorage.getItem('rcarcade.bestlaps') || '{}') || {}; }
+    catch (_) { state.bestLaps = {}; }
+    // Seed the combined board with our own bests.
+    state.board = {};
+    for (const [mac, ms] of Object.entries(state.bestLaps)) {
+      state.board[mac] = { ms, cabinet: state.cabinetId, own: true };
+    }
+    renderLeaderboard();
+  }
+
+  function recordBestLap(lap) {
+    const v = selected();
+    if (!v || lap <= 0) return;
+    const mac = v.mac;
+    const prev = state.bestLaps[mac];
+    if (prev == null || lap < prev) {
+      state.bestLaps[mac] = lap;
+      try { localStorage.setItem('rcarcade.bestlaps', JSON.stringify(state.bestLaps)); } catch (_) {}
+      mergeBoard(mac, lap, state.cabinetId, true);
+      log('🏆 New best lap for ' + v.name + ': ' + fmtTime(lap));
+      // Share with other same-machine cabinets (best-effort).
+      try { state.bc && state.bc.postMessage({ type: 'lap', cabinet: state.cabinetId, mac, ms: lap }); } catch (_) {}
+    }
+  }
+
+  function mergeBoard(mac, ms, cabinet, own) {
+    const cur = state.board[mac];
+    if (!cur || ms < cur.ms) state.board[mac] = { ms, cabinet, own: own || (cur && cur.own) };
+    renderLeaderboard();
+  }
+
+  function carNameForMac(mac) {
+    const v = state.vehicles.find((x) => x.mac === mac);
+    return v ? v.name : (mac ? mac.slice(-8) : '—');
+  }
+
+  function renderLeaderboard() {
+    const box = $('leaderboard');
+    if (!box) return;
+    const rows = Object.entries(state.board)
+      .map(([mac, e]) => ({ mac, ms: e.ms, own: e.own }))
+      .sort((a, b) => a.ms - b.ms);
+    if (!rows.length) {
+      box.innerHTML = '<div class="lap-row"><span style="color:var(--text-dim)">No lap times yet — cross the gate to set one.</span></div>';
+      return;
+    }
+    const medal = ['🥇', '🥈', '🥉'];
+    box.innerHTML = rows.map((r, i) =>
+      `<div class="lap-row ${i === 0 ? 'best' : ''}">
+        <span>${medal[i] || (i + 1 + '.')} ${esc(carNameForMac(r.mac))}${r.own ? '' : ' <small style="color:var(--text-dim)">(cab)</small>'}</span>
+        <b>${fmtTime(r.ms)}</b>
+      </div>`).join('');
+  }
+
+  function clearLeaderboard() {
+    state.bestLaps = {}; state.board = {};
+    try { localStorage.removeItem('rcarcade.bestlaps'); } catch (_) {}
+    renderLeaderboard();
+    log('Leaderboard cleared.');
+  }
 
   /* =================================================================
      MULTI-CABINET PRESENCE (best-effort, same-origin via BroadcastChannel)
@@ -3253,6 +3355,8 @@
         delete state.claims[m.mac]; renderGrid();
       } else if (m.type === 'who') {
         if (selected()) announceClaim(selected().mac);
+      } else if (m.type === 'lap' && m.mac && typeof m.ms === 'number') {
+        mergeBoard(m.mac, m.ms, m.cabinet || '?', false);   // another cabinet's best lap
       }
     };
     state.bc.postMessage({ type: 'who', cabinet: state.cabinetId });
@@ -3945,11 +4049,13 @@
     $('btnHapticTest').addEventListener('click', testRumble);
     updateTuneUI();
 
-    // Race timer
+    // Race timer + lap gate leaderboard
     $('btnTimer').addEventListener('click', timerToggle);
     $('btnLap').addEventListener('click', timerLap);
     $('btnTimerReset').addEventListener('click', timerReset);
+    $('btnClearBoard').addEventListener('click', clearLeaderboard);
     renderLaps();
+    loadBestLaps();
 
     // ESC calibration
     $('calFwd').addEventListener('click', () => calSend(255));

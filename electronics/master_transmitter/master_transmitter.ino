@@ -74,6 +74,14 @@ typedef struct __attribute__((packed)) {
   uint8_t  car[6];  // claimed car MAC (all zero = idle / released)
 } PresenceFrame;
 
+// Broadcast BY an IR lap gate when its beam breaks. Any master relays it to the
+// browser as "LAP,<gate>,<seq>". (9 bytes — distinct from the frames above.)
+typedef struct __attribute__((packed)) {
+  char     tag[4];  // "LAP\0"
+  uint8_t  gate;    // gate id (0..255)
+  uint32_t seq;     // rolling crossing counter
+} LapFrame;
+
 /* ---------- Constants ---------- */
 static const uint8_t BROADCAST[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 static const uint32_t PRESENCE_MS  = 1000;  // announce our claim once/sec
@@ -126,6 +134,16 @@ static void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int
       Serial.print("CLAIM,");
       printMac(info->src_addr); Serial.print(',');
       printMac(p.car);          Serial.println();
+    }
+    return;
+  }
+  if (len == sizeof(LapFrame)) {
+    LapFrame lf;
+    memcpy(&lf, data, sizeof(lf));
+    if (lf.tag[0] == 'L' && lf.tag[1] == 'A' && lf.tag[2] == 'P') {
+      Serial.print("LAP,");
+      Serial.print(lf.gate); Serial.print(',');
+      Serial.println(lf.seq);
     }
     return;
   }
