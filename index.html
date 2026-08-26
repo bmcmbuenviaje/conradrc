@@ -684,6 +684,22 @@
       </section>
 
       <section class="panel">
+        <h2>📈 Session Log</h2>
+        <div class="btn-row">
+          <button id="btnLog" class="primary">● Record Data</button>
+          <button id="btnLogExport">⬇ CSV</button>
+        </div>
+        <div class="kv"><span>Samples</span><b id="logCount">0</b></div>
+        <canvas id="logChart" width="300" height="90" style="width:100%;height:90px;background:var(--bg-2);border:1px solid var(--stroke);border-radius:8px;margin-top:8px;display:block;"></canvas>
+        <div class="chart-legend" style="font-size:10px;color:var(--text-dim);margin-top:4px;">
+          <span style="color:var(--neon-cyan)">■</span> motor
+          &nbsp; <span style="color:var(--neon-lime)">■</span> speed
+          &nbsp; <span style="color:var(--neon-amber)">■</span> battery
+        </div>
+        <div class="kv" style="margin-top:4px;"><span>Now</span><b id="logNow" style="font-size:11px;color:var(--text-dim)">—</b></div>
+      </section>
+
+      <section class="panel">
         <h2>FPV Video</h2>
         <div class="kv"><span>Capture</span><b id="captureResVal">native (auto)</b></div>
         <select id="fpvSource" title="Where the FPV picture comes from" style="width:100%;padding:9px;margin-bottom:10px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:var(--font);font-size:12px;">
@@ -3337,6 +3353,81 @@
   }
 
   /* =================================================================
+     SESSION DATA LOGGER — sample the drive/telemetry state at 10 Hz,
+     chart it live, and export the run as CSV for tuning + diagnostics.
+     ================================================================= */
+  const LOG_HZ = 10;
+  const LOG_MAX = LOG_HZ * 60 * 60;   // 1 hour cap
+
+  function toggleLog() { state.logger.on ? stopLog() : startLog(); }
+  function startLog() {
+    const L = state.logger;
+    L.on = true; L.samples = []; L.startAt = performance.now();
+    $('btnLog').textContent = '■ Stop'; $('btnLog').classList.add('rec');
+    L.timer = setInterval(logSample, 1000 / LOG_HZ);
+    log('📈 Data logging started (' + LOG_HZ + ' Hz).');
+  }
+  function stopLog() {
+    const L = state.logger;
+    L.on = false;
+    if (L.timer) { clearInterval(L.timer); L.timer = 0; }
+    $('btnLog').textContent = '● Record Data'; $('btnLog').classList.remove('rec');
+    log('📈 Data logging stopped — ' + L.samples.length + ' samples.');
+  }
+  function logSample() {
+    const L = state.logger;
+    if (L.samples.length >= LOG_MAX) { stopLog(); log('Log full (1 hr) — stopped.', 'err'); return; }
+    const tot = state.ackOk + state.ackFail;
+    const loss = tot ? state.ackFail / tot : 0;
+    const gear = state.reverse ? 'R' : (state.controls.transmission === 'manual' ? state.gear : 'D');
+    L.samples.push({
+      t: Math.round(performance.now() - L.startAt),
+      servo: state.lastSteer | 0, motor: state.lastMotor | 0,
+      speed: +(state.vspeed || 0).toFixed(3), rpm: +(state.rpm || 0).toFixed(3), gear,
+      vbat: +(state.vbat || 0).toFixed(2), rssi: state.rssi || 0,
+      lat: Math.round(state.latencyMs || 0), loss: +loss.toFixed(3),
+    });
+    $('logCount').textContent = L.samples.length;
+    $('logNow').textContent = `M ${state.lastMotor | 0} · ${(state.vbat || 0).toFixed(2)}V · ${state.rssi || 0}dBm · ${Math.round(state.latencyMs || 0)}ms`;
+    drawLogChart();
+  }
+  function drawLogChart() {
+    const cv = $('logChart'); if (!cv) return;
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+    const all = state.logger.samples;
+    const view = all.slice(Math.max(0, all.length - 300));   // last ~30 s window
+    const m = view.length; if (!m) return;
+    const xat = (i) => (i / (m - 1 || 1)) * W;
+    // zero line for the signed motor trace
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+    const line = (color, fn) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+      view.forEach((p, i) => { const y = fn(p); i ? ctx.lineTo(xat(i), y) : ctx.moveTo(xat(i), y); });
+      ctx.stroke();
+    };
+    line('#00e5ff', (p) => H / 2 - (Math.max(-255, Math.min(255, p.motor)) / 255) * (H / 2 - 2)); // motor
+    line('#b6ff00', (p) => H - Math.max(0, Math.min(1, p.speed)) * (H - 2));                       // speed
+    // battery scaled between a plausible 6–8.4 V window (falls back gracefully at 0)
+    const lo = 6, hi = 8.4;
+    line('#ffb020', (p) => { const f = Math.max(0, Math.min(1, (p.vbat - lo) / (hi - lo))); return H - f * (H - 2); });
+  }
+  function exportLogCsv() {
+    const s = state.logger.samples;
+    if (!s.length) { log('No log data to export — record a run first.', 'err'); return; }
+    const head = 'ms,servo,motor,speed,rpm,gear,vbat,rssi,latency_ms,loss\n';
+    const body = s.map((p) => [p.t, p.servo, p.motor, p.speed, p.rpm, p.gear, p.vbat, p.rssi, p.lat, p.loss].join(',')).join('\n');
+    const blob = new Blob([head + body], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'rc-session-' + Date.now() + '.csv'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    log('📈 Exported ' + s.length + ' samples to CSV.');
+  }
+
+  /* =================================================================
      MULTI-CABINET PRESENCE (best-effort, same-origin via BroadcastChannel)
      ================================================================= */
   function initPresence() {
@@ -4056,6 +4147,11 @@
     $('btnClearBoard').addEventListener('click', clearLeaderboard);
     renderLaps();
     loadBestLaps();
+
+    // Session data logger
+    state.logger = { on: false, samples: [], timer: 0, startAt: 0 };
+    $('btnLog').addEventListener('click', toggleLog);
+    $('btnLogExport').addEventListener('click', exportLogCsv);
 
     // ESC calibration
     $('calFwd').addEventListener('click', () => calSend(255));

@@ -328,6 +328,7 @@ Wire an **IR break-beam lap gate** across the start/finish line (flash [`electro
 - **Steering Tuning panel** — trim (center), endpoint/travel (EPA), expo, and invert. All live and saved.
 - **Per-car tuning (full profile)** — the Edit dialog saves per-car **Max Power, Transmission, Engine Braking, Steer Trim, EPA, Expo, Dead-zone, Invert Steer, and optional gear-cap curve**. Applied automatically when you select the car. See the [roster JSON schema](#roster-json-schema--import---export).
 - **🛰 Fleet Dashboard** — one screen showing every registered car with **live battery, RSSI, latency, and ACTIVE / IN USE / IDLE** status. Great for the pit.
+- **📈 Session Log** — record throttle/motor, sim speed/RPM/gear, battery, RSSI, latency and packet-loss at 10 Hz, watch a live mini-chart, and **export CSV** for tuning or brownout hunting.
 - **⏺ Record FPV** — MediaRecorder-based `.webm` capture of the FPV feed. Toggle on/off from the FPV panel.
 - **Live multi-camera switching** — pick a different capture source from the dropdown mid-run; the feed swaps without stopping the app (useful for chase-cams).
 - **Gamepad haptics** — the wheel/pad rumbles on **E-STOP**, **redline**, and **low battery** (Chrome-only; needs a compatible pad).
