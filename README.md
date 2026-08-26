@@ -331,7 +331,7 @@ Wire an **IR break-beam lap gate** across the start/finish line (flash [`electro
 - **📈 Session Log** — record throttle/motor, sim speed/RPM/gear, battery, RSSI, latency and packet-loss at 10 Hz, watch a live mini-chart, and **export CSV** for tuning or brownout hunting.
 - **⏺ Record FPV** — MediaRecorder-based `.webm` capture of the FPV feed. Toggle on/off from the FPV panel.
 - **Live multi-camera switching** — pick a different capture source from the dropdown mid-run; the feed swaps without stopping the app (useful for chase-cams).
-- **Gamepad haptics** — the wheel/pad rumbles on **E-STOP**, **redline**, and **low battery** (Chrome-only; needs a compatible pad).
+- **Gamepad haptics + Road Feel FFB** — the wheel/pad rumbles on **E-STOP**, **redline**, and **low battery**; toggle **🌊 Road Feel** for continuous **engine vibration** (scaled by speed/throttle), a **rumble-strip buzz** on hard cornering at speed, a **redline shudder**, and a **launch/wheelspin shudder**. *Note:* browsers expose vibration only — not directional force — so there's no true centering spring (that lives in your wheel's own driver). Chrome; needs a haptic-capable device.
 - **🔊 Engine Sound** — WebAudio synth whose pitch tracks RPM/throttle (toggle in Drivetrain).
 - **🛠 Calibrate ESC** — a guided helper that sends raw full-forward / neutral / full-reverse pulses for ESC throttle-range calibration.
 - **Race Timer** — Start/Lap/Reset with best-lap tracking.

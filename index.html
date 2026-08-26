@@ -657,10 +657,11 @@
         <input type="range" id="hapticSlider" min="0" max="150" step="10" value="100" />
         <div class="btn-row" style="margin-top:8px;">
           <button id="btnHapticTest" class="btn-sm">▶ Test Rumble</button>
+          <button id="btnFfbEffects" class="btn-sm">🌊 Road Feel: OFF</button>
         </div>
         <p style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5">
-          Rumble pulses on E-STOP, redline, and low-battery. 0% disables. Requires a wheel/pad with haptic actuator (Chrome).
-          <br><b>On racing wheels</b> (Logitech / Thrustmaster / Fantech) browsers can't control rumble strength — only pulse length. Lower % = shorter buzz. Xbox / DualSense controllers get proper strength scaling.
+          Rumble pulses on E-STOP, redline, and low-battery. <b>Road Feel</b> adds continuous engine vibration, rumble-strip buzz on hard cornering, and a launch shudder. 0% disables all. Requires a wheel/pad with a haptic actuator (Chrome).
+          <br><b>On racing wheels</b> (Logitech / Thrustmaster / Fantech) browsers expose <i>vibration only</i> — not true directional force, so there's no real centering spring; strength maps to pulse length. Xbox / DualSense get proper strength scaling.
         </p>
       </section>
 
@@ -1181,6 +1182,7 @@
     wheelRange: 900,          // physical wheel rotation the driver is configured for, in degrees
     lockRange: 900,           // physical wheel rotation to reach full servo lock (<= wheelRange for faster steering)
     hapticGain: 100,          // force-feedback / rumble strength (0..150 %)
+    ffbEffects: false,        // continuous "road feel" rumble (engine/curb/launch), opt-in
     lowBattV: 7.0,            // low-battery warning threshold (volts)
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
@@ -2968,6 +2970,7 @@
         : 'Ratio 1.00× — the full ' + c.wheelRange + '° of the wheel maps 1:1 to servo lock.';
     $('hapticVal').textContent = (c.hapticGain ?? 100) + '%';
     $('hapticSlider').value = c.hapticGain ?? 100;
+    syncFfbButton();
     // Sync the in-viewport quick drawer if it's open.
     if ($('qsDrawer')?.classList.contains('open')) syncQuickSettings();
   }
@@ -3971,6 +3974,20 @@
     const d = Math.max(30, Math.min(2000, Math.round(ms * gain)));
     try { act.playEffect('dual-rumble', { duration: d, strongMagnitude: s, weakMagnitude: w }); } catch (_) {}
   }
+  // Raw effect play — like rumble() but WITHOUT the 100 ms debounce, for the
+  // continuous "road feel" loop which intentionally overlaps short effects.
+  function ffbPlay(strong, weak, ms) {
+    const pad = state.padIndex !== null ? navigator.getGamepads()[state.padIndex] : null;
+    const act = pad?.vibrationActuator;
+    if (!act) return;
+    const gain = (state.controls.hapticGain ?? 100) / 100;
+    if (gain <= 0) return;
+    const s = Math.max(0, Math.min(1, strong * gain));
+    const w = Math.max(0, Math.min(1, weak * gain));
+    const d = Math.max(30, Math.min(500, Math.round(ms)));
+    try { act.playEffect('dual-rumble', { duration: d, strongMagnitude: s, weakMagnitude: w }); } catch (_) {}
+  }
+
   function updateHaptics() {
     // Redline pulse
     const inRedline = state.controls.transmission === 'manual' && state.rpm >= 1.0 && !state.reverse;
@@ -3980,6 +3997,62 @@
     const isLow = state.vbat !== null && state.vbat <= state.controls.lowBattV;
     if (isLow && !state.wasLowBatt) rumble(0.6, 0.6, 200);
     state.wasLowBatt = isLow;
+
+    updateFfbEffects();
+  }
+
+  // Continuous "road feel" force feedback. NOTE: browsers expose only vibration
+  // (dual-rumble), not directional force, so this simulates road/engine texture
+  // through rumble rather than a real centering spring. Runs each drive tick and
+  // plays a fresh short effect every ~90 ms so the sensation feels continuous.
+  function updateFfbEffects() {
+    if (!state.controls.ffbEffects) return;
+    if (state.padIndex === null || !state.armed || state.estop) return;
+    const now = performance.now();
+    if (now - (state.lastFfb || 0) < 90) return;
+    state.lastFfb = now;
+
+    const speed = Math.max(0, Math.min(1, state.vspeed || 0));         // 0..1 sim speed
+    const throttle = Math.min(1, Math.abs(state.lastMotor || 0) / 255);
+    const steerOff = Math.abs((state.lastSteer ?? 90) - 90) / 90;      // 0 (center) .. 1 (full lock)
+
+    // 1) Engine/road vibration — subtle, grows with speed + throttle.
+    let weak = 0.04 + 0.22 * speed + 0.10 * throttle;
+    let strong = 0.02 + 0.06 * speed;
+
+    // 2) Redline shudder (manual, high RPM) — coarse strong buzz.
+    if (state.controls.transmission === 'manual' && !state.reverse && state.rpm >= 0.92) {
+      strong += 0.35 * ((state.rpm - 0.92) / 0.08);
+    }
+
+    // 3) Rumble-strip / tire-scrub when cornering hard at speed — textured by
+    //    alternating the magnitude each tick.
+    if (steerOff > 0.55 && speed > 0.35) {
+      const texture = (state.ffbTick = (state.ffbTick || 0) + 1) % 2 ? 0.28 : 0.10;
+      strong += texture * (steerOff - 0.55) / 0.45 * speed;
+    }
+
+    // 4) Launch shudder — hard throttle while barely moving = wheelspin feel.
+    if (throttle > 0.6 && speed < 0.2) strong += 0.3 * (throttle - 0.6) / 0.4;
+
+    strong = Math.max(0, Math.min(1, strong));
+    weak = Math.max(0, Math.min(1, weak));
+    // Below a floor there's nothing to feel — skip to save the actuator.
+    if (strong < 0.03 && weak < 0.05) return;
+    ffbPlay(strong, weak, 120);   // 120 ms > 90 ms cadence → overlaps into a continuous feel
+  }
+
+  function toggleFfbEffects() {
+    state.controls.ffbEffects = !state.controls.ffbEffects;
+    saveControls();
+    syncFfbButton();
+    log('Road-feel FFB ' + (state.controls.ffbEffects ? 'ON' : 'OFF'));
+  }
+  function syncFfbButton() {
+    const b = $('btnFfbEffects'); if (!b) return;
+    const on = !!state.controls.ffbEffects;
+    b.textContent = on ? '🌊 Road Feel: ON' : '🌊 Road Feel: OFF';
+    b.classList.toggle('on', on);
   }
 
   /* =================================================================
@@ -4138,6 +4211,8 @@
     $('lockRangeSel').addEventListener('change', (e) => setLockRange(parseInt(e.target.value, 10)));
     $('hapticSlider').addEventListener('input', (e) => setHapticGain(parseInt(e.target.value, 10)));
     $('btnHapticTest').addEventListener('click', testRumble);
+    $('btnFfbEffects').addEventListener('click', toggleFfbEffects);
+    syncFfbButton();
     updateTuneUI();
 
     // Race timer + lap gate leaderboard
