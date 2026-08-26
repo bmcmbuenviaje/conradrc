@@ -301,6 +301,18 @@ The car **only moves when ARMED**. This is deliberate:
 
 With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **`Space`** E-STOP, **`Enter`** arm.
 
+### ◄ Reverse control modes
+
+In **Test & Map Controls** pick how reverse engages:
+
+- **Toggle** *(default)* — press the reverse button/key once to flip direction.
+- **Hold button (momentary)** — reverse only while the bound button is held.
+- **Clutch pedal (hold to reverse)** — reverse while a pedal **axis** is pressed. Map your wheel's **clutch pedal** to the *Clutch (reverse) pedal axis* and set its rest convention — now the clutch pedal is your reverse.
+
+### 📱 Centered touch throttle
+
+On phones/tablets the throttle pad is a **centered vertical stick** by default: **push up = forward, pull down = reverse**, release = neutral (no separate REV button needed). Reverse direction rides along over a **remote session** too, so a phone driving a PC station reverses correctly. Prefer the old bottom-rest pad + REV button? Uncheck **Centered touch throttle** in Test & Map Controls.
+
 ### 🎚️ Extras
 
 - **Steering Tuning panel** — trim (center), endpoint/travel (EPA), expo, and invert. All live and saved.

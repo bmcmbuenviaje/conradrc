@@ -237,6 +237,19 @@
     }
     .touch-steer .touch-thumb    { left: calc(50% - 21px); top: calc(50% - 21px); }
     .touch-throttle .touch-thumb { left: calc(50% - 21px); bottom: 8px; top: auto; }
+    /* Centered (bidirectional) throttle: rest = middle, up = forward, down = reverse. */
+    .touch-throttle.center {
+      background: linear-gradient(to bottom,
+        rgba(41,255,155,0.14), rgba(41,255,155,0.03) 42%,
+        rgba(255,255,255,0.10) 49%, rgba(255,255,255,0.10) 51%,
+        rgba(255,77,94,0.03) 58%, rgba(255,77,94,0.16));
+    }
+    .touch-throttle.center .touch-thumb { top: calc(50% - 21px); bottom: auto; }
+    .thr-hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 10px;
+      letter-spacing: 2px; font-weight: 800; pointer-events: none; display: none; }
+    .touch-throttle.center .thr-hint { display: block; }
+    .thr-hint.thr-fwd { top: 8px;    color: var(--ok, #29ff9b); }
+    .thr-hint.thr-rev { bottom: 8px; color: var(--bad, #ff4d5e); }
     .touch-label {
       position: absolute; top: 6px; left: 8px;
       font-size: 10px; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase;
@@ -752,6 +765,8 @@
           <div class="touch-zone touch-throttle" id="touchThrottle">
             <div class="touch-thumb" id="touchThrottleThumb"></div>
             <div class="touch-label">THROTTLE</div>
+            <div class="thr-hint thr-fwd">▲ FWD</div>
+            <div class="thr-hint thr-rev">▼ REV</div>
           </div>
           <!-- On-screen action buttons: reachable without opening any menu. -->
           <div class="touch-actions">
@@ -1078,7 +1093,31 @@
         <div class="field"><label for="mapShiftDown">Shift-down button</label><select id="mapShiftDown"></select></div>
         <div class="field"><label for="mapReverse">Reverse button</label><select id="mapReverse"></select></div>
       </div>
-      <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Watch the <b>Buttons</b> row to find a button's index for shifting/reverse. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
+      <div class="field-row">
+        <div class="field">
+          <label for="mapReverseMode">Reverse control</label>
+          <select id="mapReverseMode">
+            <option value="toggle">Toggle (press to flip)</option>
+            <option value="hold">Hold button (momentary)</option>
+            <option value="pedal">Clutch pedal (hold to reverse)</option>
+          </select>
+        </div>
+        <div class="field"><label for="mapClutch">Clutch (reverse) pedal axis</label><select id="mapClutch"></select></div>
+        <div class="field">
+          <label for="mapClutchRest">Clutch rests at</label>
+          <select id="mapClutchRest">
+            <option value="neg">-1.0 (typical wheel pedal)</option>
+            <option value="zero">0.0 (trigger / joystick)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:2px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="mapTouchCenter" style="width:auto;" />
+          Centered touch throttle — up = forward, down = reverse (hides the on-screen REV button)
+        </label>
+      </div>
+      <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Watch the <b>Buttons</b> row to find a button's index for shifting/reverse. <b>Reverse control:</b> <i>Toggle</i> uses the reverse button/key; <i>Hold</i> makes that button momentary; <i>Clutch pedal</i> reverses while a pedal axis is pressed. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
       <div class="modal-actions">
         <button class="primary" id="ctrlSave">Save Mapping</button>
         <button id="ctrlClose">Close</button>
@@ -1122,6 +1161,10 @@
     lowBattV: 7.0,            // low-battery warning threshold (volts)
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
+    reverseMode: 'toggle',    // 'toggle' | 'hold' (button momentary) | 'pedal' (clutch axis momentary)
+    clutchAxis: null,         // gamepad axis index used as the reverse pedal (null = unbound)
+    clutchRest: 'neg',        // clutch pedal rest convention: 'neg' (-1 released) or 'zero' (0 released)
+    touchThrottleCenter: true,// touch throttle centered: up = forward, down = reverse (no REV button)
     hotkeys: null,            // keyboard hotkey map { action: keyString }; null uses defaults
     hudScale: 1.0,            // global HUD scale (0.6..1.5)
     hudLayout: {},            // per-widget {dx, dy} pixel offsets from default position
@@ -1944,7 +1987,7 @@
     let servo = 90, base = 0;
     if (input) {
       servo = computeSteer(input.steerAxis);
-      base = pedalToPwm(input.throttleAxis, state.controls.rest, state.controls.deadzone, state.controls.throttleExpo);
+      base = pedalToPwm(input.throttleAxis, input.rest || state.controls.rest, state.controls.deadzone, state.controls.throttleExpo);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
 
@@ -2017,8 +2060,41 @@
       const delta = (g.live - g.centerGamma) / (g.sensitivity || 45);
       steer = Math.max(-1, Math.min(1, delta));
     }
+    // Centered throttle: the vertical stick is bidirectional — pushing up drives
+    // forward, pulling down engages reverse. Direction is owned by the stick, so
+    // we set state.reverse from its sign and feed the magnitude as the pedal press.
+    if (state.controls.touchThrottleCenter) {
+      const raw = state.touch.throttleAxis;         // -1..+1, rest 0
+      const db = 0.06;                              // small neutral band around center
+      state.reverse = raw < -db;
+      const press = Math.abs(raw) < db ? 0 : Math.abs(raw);
+      return { steerAxis: steer, throttleAxis: press, rest: 'zero' };
+    }
     const throttleAxis = state.touch.throttleAxis;
     return { steerAxis: steer, throttleAxis };
+  }
+
+  // Neutral value for the touch throttle: centered mode rests at 0 (middle);
+  // legacy mode rests at the pedal convention (bottom).
+  function touchThrottleRest() {
+    if (state.controls.touchThrottleCenter) return 0;
+    return state.controls.rest === 'neg' ? -1 : 0;
+  }
+
+  // Apply the centered-vs-bottom touch-throttle style: toggles the CSS class,
+  // hides the redundant on-screen REV button in centered mode, and re-seats the
+  // thumb + neutral value.
+  function applyTouchThrottleMode() {
+    const on = !!state.controls.touchThrottleCenter;
+    const zone = $('touchThrottle'); if (zone) zone.classList.toggle('center', on);
+    const rev = $('touchRev'); if (rev) rev.style.display = on ? 'none' : '';
+    state.touch.throttleAxis = touchThrottleRest();
+    const thumb = $('touchThrottleThumb');
+    if (thumb) {
+      if (on) { thumb.style.top = 'calc(50% - 21px)'; thumb.style.bottom = 'auto'; }
+      else    { thumb.style.top = 'auto'; thumb.style.bottom = '8px'; }
+      thumb.style.left = 'calc(50% - 21px)';
+    }
   }
 
   // Rising-edge detection for the gamepad buttons bound to shift/reverse.
@@ -2056,15 +2132,36 @@
 
     // Legacy fields kept for backward compat with older saved rosters.
     const c = state.controls;
+    const rmode = c.reverseMode || 'toggle';
+
+    // Hold / clutch-pedal reverse: momentary, recomputed every tick from the pad.
+    if (rmode === 'hold') {
+      const bmapR = activeHotkeyButtons();
+      const idx = (bmapR && bmapR.reverse != null) ? bmapR.reverse : c.btnReverse;
+      state.reverse = idx != null && !!pad.buttons[idx] && pad.buttons[idx].pressed;
+    } else if (rmode === 'pedal') {
+      const ax = c.clutchAxis;
+      if (ax != null && pad.axes[ax] !== undefined) {
+        const v = pad.axes[ax];
+        const press = c.clutchRest === 'neg' ? (v + 1) / 2 : v;
+        state.reverse = press > 0.5;   // pressed past halfway = reverse
+      }
+    }
+
     if (edge(c.btnShiftUp))   shiftGear(+1);
     if (edge(c.btnShiftDown)) shiftGear(-1);
-    if (edge(c.btnReverse))   toggleReverse();
+    { const e = edge(c.btnReverse); if (rmode === 'toggle' && e) toggleReverse(); }
 
     // New unified path: any HOTKEY_ACTION with a bound gamepad button fires here.
+    // (In hold/pedal reverse modes, the 'reverse' action is handled above, so we
+    // consume its edge but don't toggle.)
     const bmap = activeHotkeyButtons();
     for (const [action, btn] of Object.entries(bmap)) {
       if (btn === null || btn === undefined) continue;
-      if (edge(btn) && HOTKEY_ACTIONS[action]) HOTKEY_ACTIONS[action].fn();
+      const e = edge(btn);
+      if (!e || !HOTKEY_ACTIONS[action]) continue;
+      if (action === 'reverse' && rmode !== 'toggle') continue;
+      HOTKEY_ACTIONS[action].fn();
     }
   }
 
@@ -2241,7 +2338,9 @@
     $('touchOverlay').classList.toggle('active', state.touch.active);
     if (!on) {
       state.touch.steerAxis = 0;
-      state.touch.throttleAxis = state.controls.rest === 'neg' ? -1 : 0;
+      state.touch.throttleAxis = touchThrottleRest();
+    } else {
+      applyTouchThrottleMode();   // ensure centered class / REV-button visibility is correct
     }
     // Reflect in the Quick Settings drawer button label.
     const b = $('qsTouch'); if (b) { b.classList.toggle('on', state.touch.active); b.textContent = state.touch.active ? '📱 Touch: ON' : '📱 Touch: OFF'; }
@@ -2288,9 +2387,11 @@
         el.classList.remove('active');
         // Reset to rest position when released.
         if (axisName === 'steerAxis') state.touch.steerAxis = 0;
-        if (axisName === 'throttleAxis') state.touch.throttleAxis = state.controls.rest === 'neg' ? -1 : 0;
-        // Snap thumb back to center/bottom.
-        if (orientation === 'horizontal') { thumbEl.style.left = 'calc(50% - 21px)'; thumbEl.style.top = 'calc(50% - 21px)'; }
+        if (axisName === 'throttleAxis') state.touch.throttleAxis = touchThrottleRest();
+        // Snap thumb back to its rest position (center for steer / centered throttle,
+        // bottom for a legacy bottom-rest throttle).
+        const centered = axisName === 'throttleAxis' && state.controls.touchThrottleCenter;
+        if (orientation === 'horizontal' || centered) { thumbEl.style.left = 'calc(50% - 21px)'; thumbEl.style.top = 'calc(50% - 21px)'; thumbEl.style.bottom = 'auto'; }
         else { thumbEl.style.top = 'auto'; thumbEl.style.bottom = '8px'; thumbEl.style.left = 'calc(50% - 21px)'; }
         break;
       }
@@ -2591,11 +2692,15 @@
   function handleRemoteMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
     if (msg.type === 'input') {
-      // Host receives input from client. Clamp both axes.
+      // Host receives input from client. Clamp both axes and carry the client's
+      // pedal-rest convention so a centered/bidirectional stick maps correctly.
       state.remote.remoteInput = {
         steerAxis: Math.max(-1, Math.min(1, msg.steer ?? 0)),
         throttleAxis: Math.max(-1, Math.min(1, msg.throttle ?? -1)),
+        rest: msg.rest || undefined,
       };
+      // Direction is owned by the client (its stick / reverse control).
+      if (typeof msg.rev === 'boolean') state.reverse = msg.rev;
     } else if (msg.type === 'action') {
       const def = HOTKEY_ACTIONS[msg.name]; if (def) def.fn();
     }
@@ -2631,9 +2736,11 @@
     state.remote.inputSender = setInterval(() => {
       if (!state.remote.connected || !state.remote.dataConn) return;
       const input = readGamepad() || readTouch() || readKeyboard() ||
-                    { steerAxis: 0, throttleAxis: (state.controls.rest === 'neg' ? -1 : 0) };
+                    { steerAxis: 0, throttleAxis: touchThrottleRest(), rest: (state.controls.touchThrottleCenter ? 'zero' : null) };
       try {
-        state.remote.dataConn.send({ type: 'input', steer: input.steerAxis, throttle: input.throttleAxis });
+        // Relay direction (rev) + the pedal-rest convention so the host interprets
+        // the centered/bidirectional stick exactly as the client does.
+        state.remote.dataConn.send({ type: 'input', steer: input.steerAxis, throttle: input.throttleAxis, rev: !!state.reverse, rest: input.rest || null });
       } catch (_) {}
     }, 20);
   }
@@ -3191,6 +3298,9 @@
     const c = state.controls;
     $('mapDeadzone').value = c.deadzone;
     $('mapRest').value = c.rest;
+    $('mapReverseMode').value = c.reverseMode || 'toggle';
+    $('mapClutchRest').value = c.clutchRest || 'neg';
+    $('mapTouchCenter').checked = !!c.touchThrottleCenter;
     $('ctrlOverlay').classList.add('open');
     state.testerTimer = setInterval(updateTester, 50);
     updateTester();
@@ -3213,6 +3323,19 @@
       }
       sel.value = state.controls[key];
     });
+  }
+
+  // Clutch/reverse pedal axis select — like the axis selects but with a "None".
+  function ensureClutchSelect(count) {
+    const sel = $('mapClutch');
+    if (sel.options.length === count + 1) return; // +1 for "None"
+    sel.innerHTML = '<option value="">None</option>';
+    for (let i = 0; i < count; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = 'Axis ' + i;
+      sel.appendChild(o);
+    }
+    sel.value = state.controls.clutchAxis == null ? '' : state.controls.clutchAxis;
   }
 
   function ensureButtonSelects(count) {
@@ -3239,11 +3362,13 @@
     }
     $('ctrlStatus').textContent = pad.id;
     ensureAxisSelects(pad.axes.length);
+    ensureClutchSelect(pad.axes.length);
     ensureButtonSelects(pad.buttons.length);
 
     const steerSel = parseInt($('mapSteer').value, 10);
     const thrSel = parseInt($('mapThrottle').value, 10);
     const brkSel = parseInt($('mapBrake').value, 10);
+    const cluSel = $('mapClutch').value === '' ? -1 : parseInt($('mapClutch').value, 10);
 
     $('axesLive').innerHTML = pad.axes.map((v, i) => {
       const pct = ((v + 1) / 2) * 100;
@@ -3251,6 +3376,7 @@
       if (i === steerSel) tag = ' · STEER';
       else if (i === thrSel) tag = ' · THROTTLE';
       else if (i === brkSel) tag = ' · BRAKE';
+      else if (i === cluSel) tag = ' · CLUTCH';
       return `<div class="axis-row">
         <span class="ax-i${tag ? ' mapped' : ''}">Axis ${i}${tag}</span>
         <div class="ax-track"><i style="left:${pct}%"></i></div>
@@ -3283,9 +3409,16 @@
       btnShiftUp: btn('mapShiftUp'),
       btnShiftDown: btn('mapShiftDown'),
       btnReverse: btn('mapReverse'),
+      reverseMode: $('mapReverseMode').value,
+      clutchAxis: ($('mapClutch').value === '' ? null : parseInt($('mapClutch').value, 10)),
+      clutchRest: $('mapClutchRest').value,
+      touchThrottleCenter: $('mapTouchCenter').checked,
     };
+    // Switching away from toggle shouldn't leave reverse stuck on.
+    if (state.controls.reverseMode !== 'toggle') state.reverse = false;
     saveControls();
-    log(`Control map saved: steer=Axis${state.controls.steer}, throttle=Axis${state.controls.throttle}, deadzone=${state.controls.deadzone}, shift+=${state.controls.btnShiftUp ?? '—'}/shift-=${state.controls.btnShiftDown ?? '—'}, reverse=${state.controls.btnReverse ?? '—'}.`);
+    applyTouchThrottleMode();
+    log(`Control map saved: steer=Axis${state.controls.steer}, throttle=Axis${state.controls.throttle}, reverse=${state.controls.reverseMode}${state.controls.reverseMode === 'pedal' ? ' (clutch Axis' + (state.controls.clutchAxis ?? '—') + ')' : ''}, touch=${state.controls.touchThrottleCenter ? 'centered' : 'bottom'}.`);
     closeCtrlModal();
   }
 
@@ -3755,6 +3888,7 @@
       else             setArmed(!state.armed);  // otherwise just toggle
     });
     bindTapBtn('touchRev', toggleReverse);
+    applyTouchThrottleMode();   // set centered/bottom throttle style per saved prefs
     syncTouchButtons();
     initGyroListener();
     // Auto-enable touch on touch-first devices (phones/tablets).
