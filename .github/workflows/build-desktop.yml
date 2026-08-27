@@ -1,0 +1,43 @@
+# Builds the Electron desktop app on Windows and publishes the installer +
+# portable .exe to a GitHub Release. Triggered by pushing a version tag
+# (e.g. `git tag v1.0.0 && git push origin v1.0.0`) or run manually from the
+# Actions tab. No local Node toolchain required — GitHub's runners do the build.
+name: Build desktop app
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed for electron-builder to create the Release
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build and publish (electron-builder → GitHub Release)
+        run: npx --no-install electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build artifacts (fallback copy on the run)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-sim-arcade-windows
+          path: |
+            dist/*.exe
+          if-no-files-found: warn
