@@ -1,0 +1,9 @@
+# Electron / Node build artifacts (desktop app)
+node_modules/
+dist/
+package-lock.json
+npm-debug.log*
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

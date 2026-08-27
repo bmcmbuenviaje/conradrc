@@ -21,12 +21,30 @@ The whole control chain is browser → USB → radio → car:
 
 - **Visual lobby** — register/edit/delete cars in-app (MAC, icon, color, stats), Import/Export roster JSON.
 - **Zero-latency control** — 50 Hz Gamepad polling, lean serial packets, ESP-NOW; live latency + packet-loss readout.
+- **Any input** — racing wheel/pad, **keyboard**, **phone touch** (centered up=fwd/down=rev stick or gyro tilt), or a **remote phone over the internet** (WebRTC) driving a PC station.
 - **Drivetrain** — max-power cap, forward/reverse, 6-speed **manual gearbox** with a **10/20/40/60/80/100 %** per-gear curve, racing **RPM shift-lights**, and **simulated engine braking** (tunable strength).
+- **Reverse your way** — toggle, **hold-button**, or a **clutch-pedal axis** (hold to reverse).
 - **Safety** — arming (throttle-at-rest required), on-screen + spacebar **E-STOP**, and browser-side failsafe (disarms on tab blur / controller drop).
 - **Telemetry HUD** — gear, RPM, latency, packet loss, **battery voltage + low-battery warning**, RSSI.
-- **Onboard FPV** — stream from a **$6 ESP32-CAM** or a **spare phone** (MJPEG) right into the viewport, with snapshot / record / remote-forward when the camera allows CORS.
-- **Tuning** — steering trim / endpoint (EPA) / expo / invert, plus **per-car** power/transmission/trim/invert saved with each vehicle.
-- **Extras** — keyboard driving fallback, WebAudio engine sound, FPV fullscreen + snapshot, lap timer, ESC calibration helper, and best-effort multi-cabinet "in use" presence.
+- **Onboard FPV** — stream from a **$6 ESP32-CAM** or a **spare phone** (MJPEG) into the viewport, with a live **FPS/latency camera-health chip**, snapshot, record, and remote-forward when the camera allows CORS.
+- **Lap timing + leaderboard** — an **IR lap gate** auto-times laps and keeps a persistent best-lap leaderboard.
+- **Session data logger** — 10 Hz recording of throttle/speed/battery/RSSI/latency with a live chart and **CSV export**.
+- **Road-feel FFB** — continuous engine/curb/redline/launch rumble on top of event pulses (vibration-based).
+- **Tuning** — steering trim / endpoint (EPA) / expo / **270°–900° wheel range** / invert, plus **per-car** profiles saved with each vehicle.
+- **Runs anywhere** — a static web page, an **installable PWA**, or a **standalone Windows `.exe`** (Electron). Works on any **WiFi ESP32** (classic, S2, S3, C3/C6 "mini") for full-size or mini RCs.
+- **Extras** — WebAudio engine sound, FPV fullscreen, ESC calibration helper, HUD editor, and best-effort multi-cabinet "in use" presence.
+
+---
+
+### 🖥️ Three ways to run it
+
+| Way | How | Best for |
+|---|---|---|
+| **Web** | Open the [GitHub Pages URL](#part-a--deploy-the-web-app-to-github-pages) in Chrome/Edge | Trying it, Chromebooks |
+| **Installed PWA** | In Chrome/Edge → address-bar **⊕ Install** | An app-like window without a build |
+| **Desktop `.exe`** | Download from **[Releases](../../releases/latest)** (or build it) | Kiosk/arcade cabinets, no browser needed |
+
+See **[Run as a desktop app](#-run-as-a-desktop-app)**. All three keep full Web Serial / Gamepad / camera support.
 
 ---
 
@@ -36,17 +54,18 @@ The whole control chain is browser → USB → radio → car:
 2. [Hardware you need](#-hardware-you-need)
 3. [Software you need](#-software-you-need)
 4. [Quick start (TL;DR)](#-quick-start-tldr)
-5. [Part A — Deploy the web app to GitHub Pages](#part-a--deploy-the-web-app-to-github-pages)
-6. [Part B — Set up the Arduino toolchain](#part-b--set-up-the-arduino-toolchain)
-7. [Part C — Flash the Master Transmitter](#part-c--flash-the-master-transmitter)
-8. [Part D — Flash the Car Receivers](#part-d--flash-the-car-receivers)
-9. [Part E — Register each car's MAC in the lobby](#part-e--register-each-cars-mac-in-the-lobby)
-10. [Part F — Wire the car hardware](#part-f--wire-the-car-hardware)
-11. [Using the arcade](#-using-the-arcade)
-12. [Serial protocol reference](#-serial-protocol-reference)
-13. [Calibration & tuning](#-calibration--tuning)
-14. [Troubleshooting](#-troubleshooting)
-15. [Repository layout](#-repository-layout)
+5. [Run as a desktop app (PWA + Electron `.exe`)](#-run-as-a-desktop-app)
+6. [Part A — Deploy the web app to GitHub Pages](#part-a--deploy-the-web-app-to-github-pages)
+7. [Part B — Set up the Arduino toolchain](#part-b--set-up-the-arduino-toolchain)
+8. [Part C — Flash the Master Transmitter](#part-c--flash-the-master-transmitter)
+9. [Part D — Flash the Car Receivers](#part-d--flash-the-car-receivers)
+10. [Part E — Register each car's MAC in the lobby](#part-e--register-each-cars-mac-in-the-lobby)
+11. [Part F — Wire the car hardware](#part-f--wire-the-car-hardware)
+12. [Using the arcade](#-using-the-arcade)
+13. [Serial protocol reference](#-serial-protocol-reference)
+14. [Calibration & tuning](#-calibration--tuning)
+15. [Troubleshooting](#-troubleshooting)
+16. [Repository layout](#-repository-layout)
 
 ---
 
@@ -132,6 +151,76 @@ The whole control chain is browser → USB → radio → car:
 4. Paste those MACs into the `VEHICLES` array in [`index.html`](index.html), commit, and push.
 5. Flash [`master_transmitter.ino`](electronics/master_transmitter/master_transmitter.ino) to the desk-side ESP32.
 6. Open the Pages URL in Chrome → **Connect** the transmitter → bind your wheel → start the FPV feed → pick a car → drive.
+
+---
+
+## 🖥️ Run as a desktop app
+
+You never *have* to install anything — the web app is fully functional in Chrome/Edge. But two packaging options make it feel (and deploy) like a native program. Both keep **Web Serial, Gamepad, WebRTC, and camera** working.
+
+### Option 1 — Install as a PWA (zero build, 10 seconds)
+
+The app already ships a web-app manifest + service worker, so Chromium browsers can install it as a standalone windowed app:
+
+1. Open the app in **Chrome** or **Edge** (the GitHub Pages URL, or `http://localhost` if self-hosting).
+2. Click the **⊕ Install** icon in the address bar (or **⋮ menu → Apps → Install this site as an app** / **Install RC Sim Arcade**).
+3. It gets its own window, taskbar/Start-menu icon, and runs offline. Uninstall from the app's ⋮ menu or `chrome://apps`.
+
+**Pros:** instant, tiny, auto-updates with the site. **Con:** the machine needs Chrome/Edge installed.
+
+### Option 2 — Standalone Windows `.exe` (Electron)
+
+For an arcade cabinet you hand out or run kiosk-style, build a real installer that bundles its own Chromium — **no browser required on the target PC**.
+
+#### A) Download a pre-built release (easiest)
+
+Grab the latest from **[Releases](../../releases/latest)**:
+
+| File | What it is |
+|---|---|
+| `RC-Sim-Arcade-<ver>-win-x64.exe` | **Installer** (NSIS) — installs with Start-menu + desktop shortcuts |
+| `RC-Sim-Arcade-<ver>-portable.exe` | **Portable** — a single double-click `.exe`, no install, great for a USB stick |
+
+> ⚠️ **Windows SmartScreen** may warn because the build isn't code-signed (signing needs a paid certificate). Click **More info → Run anyway**. To remove the warning entirely you'd sign the binary with an EV/OV code-signing cert.
+
+#### B) Build it yourself
+
+Requires **[Node.js 18+](https://nodejs.org)** (includes npm). From the repo root:
+
+```bash
+npm install         # first time: pulls Electron + electron-builder
+npm run dist        # builds dist/RC-Sim-Arcade-<ver>-win-x64.exe (+ portable)
+```
+
+The installers land in `dist/`. To build **and publish** to a GitHub Release from your machine, set a token and run the release script:
+
+```bash
+set GH_TOKEN=ghp_your_personal_access_token   # PowerShell: $env:GH_TOKEN="..."
+npm run release
+```
+
+#### C) Let GitHub build + publish it for you (no local Node)
+
+A workflow at [`.github/workflows/build-desktop.yml`](.github/workflows/build-desktop.yml) builds on a Windows runner and publishes the installers to a Release automatically. Trigger it by pushing a version tag:
+
+```bash
+# bump "version" in package.json to match, then:
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+or run it manually from the repo's **Actions → Build desktop app → Run workflow**. When it finishes, the `.exe` files appear under **[Releases](../../releases)**.
+
+#### Run / dev / kiosk
+
+```bash
+npm start                       # run the desktop app from source (dev)
+set RCARCADE_KIOSK=1 && npm start   # fullscreen kiosk mode (arcade cabinet)
+```
+
+**How the USB transmitter is picked:** in a browser, clicking *Connect* shows Chrome's serial-port chooser. In the Electron app there's no chooser — [`electron/main.js`](electron/main.js) auto-selects the ESP32 transmitter by its USB-serial chip vendor id (CP210x / CH340 / FTDI / Espressif native USB), falling back to the first port. So with one transmitter plugged in, **Connect just works**. If you run multiple serial devices and it grabs the wrong one, unplug the others or edit `ESP_VENDOR_IDS` in `electron/main.js`.
+
+> **Tauri?** A Tauri build would be far smaller (~5–10 MB) but the OS WebView2's Web Serial support is unreliable, which would force a rewrite of the serial layer. Electron is the low-risk choice for this USB-dependent app.
 
 ---
 
@@ -549,6 +638,12 @@ conradrc/
 ├── test.html                                   # In-browser smoke tests
 ├── BENCH_TEST.md                               # Commissioning checklist (print + take to the cabinet)
 ├── README.md                                   # This file
+├── package.json                                # Electron app + electron-builder config (desktop .exe)
+├── electron/
+│   └── main.js                                 # Electron main process (window + Web Serial port auto-select)
+├── .github/
+│   └── workflows/
+│       └── build-desktop.yml                   # CI: build the Windows .exe and publish to Releases
 ├── docs/
 │   ├── wiring.svg                              # Hobby-grade wiring diagram
 │   ├── wiring_toygrade.svg                     # Toy-grade H-bridge wiring diagram

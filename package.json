@@ -1,0 +1,59 @@
+{
+  "name": "rc-sim-arcade",
+  "version": "1.0.0",
+  "description": "RC Sim Racing Arcade — desktop app for driving ESP-NOW RC cars from a wheel/pad with FPV, telemetry, and a full HUD.",
+  "author": "conradrc",
+  "license": "MIT",
+  "private": true,
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.conradrc.rcsimarcade",
+    "productName": "RC Sim Arcade",
+    "artifactName": "RC-Sim-Arcade-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "manifest.webmanifest",
+      "sw.js",
+      "icon.svg"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RC Sim Arcade"
+    },
+    "portable": {
+      "artifactName": "RC-Sim-Arcade-${version}-portable.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bmcmbuenviaje",
+        "repo": "conradrc",
+        "releaseType": "release"
+      }
+    ]
+  }
+}
