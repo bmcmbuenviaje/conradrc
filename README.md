@@ -174,14 +174,19 @@ For an arcade cabinet you hand out or run kiosk-style, build a real installer th
 
 #### A) Download a pre-built release (easiest)
 
-Grab the latest from **[Releases](../../releases/latest)**:
+Grab the latest from **[Releases](../../releases/latest)** — Windows, macOS, and Linux are all built:
 
-| File | What it is |
-|---|---|
-| `RC-Sim-Arcade-<ver>-win-x64.exe` | **Installer** (NSIS) — installs with Start-menu + desktop shortcuts |
-| `RC-Sim-Arcade-<ver>-portable.exe` | **Portable** — a single double-click `.exe`, no install, great for a USB stick |
+| Platform | File | What it is |
+|---|---|---|
+| **Windows** | `RC-Sim-Arcade-<ver>-win-x64.exe` | **Installer** (NSIS) — Start-menu + desktop shortcuts |
+| **Windows** | `RC-Sim-Arcade-<ver>-portable.exe` | **Portable** — single double-click `.exe`, no install |
+| **macOS** | `RC-Sim-Arcade-<ver>-mac-arm64.dmg` / `-x64.dmg` | Disk image (Apple Silicon / Intel) |
+| **Linux** | `RC-Sim-Arcade-<ver>-linux-x64.AppImage` | Portable AppImage (`chmod +x`, then run) |
 
-> ⚠️ **Windows SmartScreen** may warn because the build isn't code-signed (signing needs a paid certificate). Click **More info → Run anyway**. To remove the warning entirely you'd sign the binary with an EV/OV code-signing cert.
+> ⚠️ **Unsigned builds** (signing needs paid certificates):
+> - **Windows SmartScreen** → *More info → Run anyway*.
+> - **macOS Gatekeeper** → right-click the app → *Open* (or `xattr -dr com.apple.quarantine "RC Sim Arcade.app"`).
+> - **Linux** → `chmod +x` the AppImage before running.
 
 #### B) Build it yourself
 

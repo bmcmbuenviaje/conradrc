@@ -1,7 +1,7 @@
-# Builds the Electron desktop app on Windows and publishes the installer +
-# portable .exe to a GitHub Release. Triggered by pushing a version tag
+# Builds the Electron desktop app for Windows, macOS, and Linux and publishes
+# the installers to a GitHub Release. Triggered by pushing a version tag
 # (e.g. `git tag v1.0.0 && git push origin v1.0.0`) or run manually from the
-# Actions tab. No local Node toolchain required — GitHub's runners do the build.
+# Actions tab. No local toolchain required — GitHub's runners do the builds.
 name: Build desktop app
 
 on:
@@ -14,8 +14,18 @@ permissions:
   contents: write   # needed for electron-builder to create the Release
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win
+          - os: macos-latest
+            args: --mac
+          - os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,15 +39,20 @@ jobs:
         run: npm install
 
       - name: Build and publish (electron-builder → GitHub Release)
-        run: npx --no-install electron-builder --win --publish always
+        run: npx --no-install electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code-signing certs on CI — build unsigned rather than trying to sign.
+          CSC_IDENTITY_AUTODISCOVERY: false
 
       - name: Upload build artifacts (fallback copy on the run)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rc-sim-arcade-windows
+          name: rc-sim-arcade-${{ matrix.os }}
           path: |
             dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
           if-no-files-found: warn

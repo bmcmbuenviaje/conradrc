@@ -1541,7 +1541,18 @@
       log('Transmitter link open @ 115200 baud.');
       if (selected()) sendCarSwap(selected());
     } catch (err) {
-      log('Serial connect failed: ' + err.message, 'err');
+      // NotFoundError = the chooser was dismissed OR (in the desktop app) no port
+      // exists at all. The most common real cause of "my transmitter isn't listed"
+      // is a missing USB-to-serial driver, so surface that fix inline.
+      if (err && (err.name === 'NotFoundError' || /no port/i.test(err.message || ''))) {
+        log('No transmitter port was selected or found.', 'err');
+        log('If it IS plugged in but not listed, install its USB-to-serial driver:', 'err');
+        log('   • CP210x (Silicon Labs): https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers', 'err');
+        log('   • CH340 (WCH): https://www.wch-ic.com/downloads/CH341SER_ZIP.html', 'err');
+        log('   • ESP32-S3/C3 native USB needs no driver. Check Device Manager → Ports (COM & LPT).', 'err');
+      } else {
+        log('Serial connect failed: ' + err.message, 'err');
+      }
     }
   }
 
