@@ -222,6 +222,19 @@ set RCARCADE_KIOSK=1 && npm start   # fullscreen kiosk mode (arcade cabinet)
 
 > **Tauri?** A Tauri build would be far smaller (~5–10 MB) but the OS WebView2's Web Serial support is unreliable, which would force a rewrite of the serial layer. Electron is the low-risk choice for this USB-dependent app.
 
+#### ⚠️ You still need the USB-to-serial driver (once per PC)
+
+The desktop app **does not (and cannot) bundle the ESP32's USB driver** — it's an OS-level kernel driver that creates the COM port the app talks to. Install it once per machine, matched to your board's USB chip:
+
+| Board's USB chip | Driver |
+|---|---|
+| **CP2102 / CP210x** (Silicon Labs — many ESP32 DevKits) | [CP210x VCP driver](https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers) |
+| **CH340 / CH341** (WCH — clones, most C3 "minis") | [CH340 driver](https://www.wch-ic.com/downloads/CH341SER_ZIP.html) |
+| **FTDI** | Built into Windows |
+| **ESP32-S3 / C3 with native USB** | ✅ None — uses Windows' built-in USB CDC driver |
+
+Not sure which chip you have? Plug the transmitter in and check **Device Manager → Ports (COM & LPT)** — the entry names the chip. If nothing appears there, the driver isn't installed. (Windows 11 often installs CP210x/CH340 automatically via Windows Update, but not always.)
+
 ---
 
 ## Part A — Deploy the web app to GitHub Pages
