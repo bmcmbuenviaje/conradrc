@@ -79,6 +79,17 @@ Everything is a checkbox — go top-to-bottom, don't skip. Steps marked ⚠️ m
 
 ---
 
+## 6b · Coasting / drag brake (⚠️ wheels up) — for crawlers
+
+- [ ] Enable **🐢 Coast** (Quick Settings) or **Rolling soft stop** (mapper). Spin the wheels up on the throttle, then release.
+- [ ] Wheels should **spin down freely** (coast), not stop instantly. If they stop hard, the **ESC drag brake** is on — fix it in the ESC (see below), not the app.
+- [ ] Map a **Brake axis** pedal. Press it partway → mild slowdown; press fully → firm stop. Braking scales with pedal depth up to **Brake pedal force**.
+- [ ] Confirm **Running Mode = Forward/Reverse** in the ESC, or reverse + brake pedal won't work.
+
+**AM32 ESC (e.g. AM32-45A — no buttons/USB port):** configure over the **signal wire** with a **USB linker** + **https://am32.ca** (Chrome). Set **Brake On Stop → OFF** (coast) and **Bidirectional/3D mode → ON** (reverse). Then re-plug the signal lead into the ESP32 and run **🛠 Calibrate ESC**. Full steps: README → *Rolling soft stop*.
+
+---
+
 ## 7 · Failsafe & safety
 
 - [ ] Arm the car → **Alt-Tab** away → the app **auto-disarms** (Safety badge back to `DISARMED`, motor neutral). Return, re-arm.
@@ -128,8 +139,9 @@ Everything is a checkbox — go top-to-bottom, don't skip. Steps marked ⚠️ m
 | Long-distance stutter | Elevate the master; check RSSI < -80 |
 | `ACK,FAIL` bursts | Range issue OR another master on the same channel — check Fleet Dashboard for `IN USE` claims |
 | Car keeps disarming | Something dropped focus — check tab, wheel, and USB |
-| Reverse does nothing | Enable reverse in the ESC's own programming |
+| Reverse does nothing | Enable reverse in the ESC (Forward/Reverse mode; AM32 → Bidirectional/3D ON) |
 | Engine brake nudges backward at low speed | Lower Engine Braking slider or set ESC to forward+brake mode |
+| Car still stops hard with Coast on | ESC drag brake — set **Drag Brake Force 0 %** (AM32: **Brake On Stop OFF** via am32.ca + USB linker) |
 
 ---
 

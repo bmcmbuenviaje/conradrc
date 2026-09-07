@@ -419,12 +419,33 @@ In **Test & Map Controls** pick how reverse engages:
 
 ### 🐢 Rolling soft stop + progressive brake pedal
 
-Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop**:
+Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop** (or flip **🐢 Coast** in the in-viewport Quick Settings drawer mid-session):
 
 - **Let off the throttle → the car rolls to a gentle stop** instead of snapping to a halt (engine braking is disabled — pure coast).
 - **Press the mapped Brake axis pedal → braking in proportion to pedal depth**, up to the **Brake pedal force** you set. Light press = gentle slow; full press = hard stop.
 
-> The app can only command the motor — it can't disable a **drag brake configured in your ESC** itself. If your crawler still stops hard with Rolling soft stop on, turn the ESC's drag-brake setting down/off (via its programming card or throttle-calibration), and the coast will come through.
+#### Making the car *physically* coast — the ESC drag brake
+
+The app only commands the motor; it can't disable a **drag brake set inside the ESC** (the ESC actively braking when the throttle returns to neutral). If your crawler still stops hard with Rolling soft stop on, that's the ESC — fix it there:
+
+- **Drag Brake Force → 0 %** (or ~5–10 % if you want it to hold on inclines).
+- **Running Mode → Forward / Reverse** — required for the app's reverse *and* progressive brake pedal to work (not "Forward/Brake", where pulling back only brakes).
+
+**Trade-off:** at 0 % drag brake the car won't hold on a slope at neutral — it rolls. With the app's brake pedal you can feather braking on descents instead, which is the setup this feature is built for. Want hill-hold too? Use ~5–15 %.
+
+#### AM32 ESCs (e.g. AM32-45A) — no buttons, no USB port on purpose
+
+AM32 is **open-source ESC firmware** configured through the **signal wire** (the 3-pin servo lead that plugs into the ESP32's ESC pin) — that lead *is* the config port. You need a cheap **AM32/BLHeli USB linker** (~$5) or an FC passthrough:
+
+1. Unplug the ESC's signal lead from the ESP32 and plug it into the **USB linker** → PC.
+2. Power the ESC (battery + motor connected), open **https://am32.ca** (the web configurator) in **Chrome**, and **Connect** (Web Serial).
+3. Set:
+   - **Brake On Stop → OFF** ← this is the drag brake; OFF = coast. *(This is the fix.)*
+   - **Bidirectional / 3D mode → ON** ← enables reverse (below-neutral pulse = reverse), matching this app's `1000–2000 µs` signal with `1500 µs` neutral.
+   - Optionally set **Servo Low / Neutral / High** to `1000 / 1500 / 2000 µs` so endpoints line up (then run the app's **🛠 Calibrate ESC** helper).
+4. Write/save, unplug the linker, plug the signal lead back into the ESP32.
+
+> The AM32-45A's **6 V @ 2 A BEC** can also power the ESP32 — feed the BEC 6 V into the ESP32's **VIN/5V** pin (not 3V3), sharing ground.
 
 ### 📱 Centered touch throttle
 
