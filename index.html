@@ -1124,6 +1124,7 @@
             <option value="toggle">Toggle (press to flip)</option>
             <option value="hold">Hold button (momentary)</option>
             <option value="pedal">Clutch pedal (hold to reverse)</option>
+            <option value="clutchThrottle">Clutch pedal = reverse throttle (proportional)</option>
           </select>
         </div>
         <div class="field"><label for="mapClutch">Clutch (reverse) pedal axis</label><select id="mapClutch"></select></div>
@@ -1141,6 +1142,19 @@
           Centered touch throttle — up = forward, down = reverse (hides the on-screen REV button)
         </label>
       </div>
+      <div class="field-row">
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="mapCoast" style="width:auto;" />
+            Rolling soft stop — coast on release (no engine braking)
+          </label>
+        </div>
+        <div class="field">
+          <label for="mapBrakeForce">Brake pedal force <b id="mapBrakeForceVal">70%</b></label>
+          <input type="range" id="mapBrakeForce" min="0" max="100" step="5" value="70" />
+        </div>
+      </div>
+      <div class="hint" style="margin-top:0;">With <b>Rolling soft stop</b> on, letting off the throttle lets the crawler roll to a gentle stop; pressing the mapped <b>Brake axis</b> pedal applies braking in proportion to how deep you press (up to the force above).</div>
       <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Watch the <b>Buttons</b> row to find a button's index for shifting/reverse. <b>Reverse control:</b> <i>Toggle</i> uses the reverse button/key; <i>Hold</i> makes that button momentary; <i>Clutch pedal</i> reverses while a pedal axis is pressed. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
       <div class="modal-actions">
         <button class="primary" id="ctrlSave">Save Mapping</button>
@@ -1186,10 +1200,12 @@
     lowBattV: 7.0,            // low-battery warning threshold (volts)
     sound: false,             // engine-sound synth on/off
     btnShiftUp: null, btnShiftDown: null, btnReverse: null, // gamepad button indices (null = unbound)
-    reverseMode: 'toggle',    // 'toggle' | 'hold' (button momentary) | 'pedal' (clutch axis momentary)
+    reverseMode: 'toggle',    // 'toggle' | 'hold' | 'pedal' | 'clutchThrottle'
     clutchAxis: null,         // gamepad axis index used as the reverse pedal (null = unbound)
     clutchRest: 'neg',        // clutch pedal rest convention: 'neg' (-1 released) or 'zero' (0 released)
     touchThrottleCenter: true,// touch throttle centered: up = forward, down = reverse (no REV button)
+    coastMode: false,         // rolling soft stop: no engine braking on release; brake pedal slows
+    brakeForce: 70,           // 0..100 %, how hard the mapped brake pedal brakes (coast mode)
     hotkeys: null,            // keyboard hotkey map { action: keyString }; null uses defaults
     hudScale: 1.0,            // global HUD scale (0.6..1.5)
     hudLayout: {},            // per-widget {dx, dy} pixel offsets from default position
@@ -2023,29 +2039,50 @@
       return;
     }
     // Input priority: real gamepad → remote client (via WebRTC) → touch/gyro → keyboard.
+    state.brakePress = 0;   // reset each tick (handleMappedButtons refills if a pad is present)
     const input = readGamepad() || readRemote() || readTouch() || readKeyboard();
-    handleMappedButtons(); // shift up/down + reverse edges
-    const manual = state.controls.transmission === 'manual';
+    handleMappedButtons(); // shift up/down + reverse edges + pedal reads
+    const cc = state.controls;
+    const manual = cc.transmission === 'manual';
+    const dz = cc.deadzone;
     let servo = 90, base = 0;
     if (input) {
       servo = computeSteer(input.steerAxis);
-      base = pedalToPwm(input.throttleAxis, input.rest || state.controls.rest, state.controls.deadzone, state.controls.throttleExpo);
+      base = pedalToPwm(input.throttleAxis, input.rest || cc.rest, dz, cc.throttleExpo);
       $('padAxis').textContent = input.steerAxis.toFixed(2);
     }
 
+    // Brake / clutch-reverse take priority over the forward throttle.
+    const brakeActive = cc.coastMode && (state.brakePress || 0) > 0.05;
+    const clutchRev   = cc.reverseMode === 'clutchThrottle' && state.reverse && (state.clutchReverseBase || 0) > 0;
+
     let motor;
-    if (manual && !state.reverse) {
-      motor = simManualDrive(base);            // geared drive + engine braking
+    if (brakeActive) {
+      // Progressive brake pedal: reverse PWM proportional to pedal depth × force cap.
+      // Actively slows the car; how deep you press = how hard it brakes.
+      const bForce = Math.round(state.brakePress * (cc.brakeForce / 100) * 255);
+      motor = -Math.min(255, bForce);
+      state.vspeed = Math.max(0, state.vspeed - 0.06);   // bleed the sim speed toward stop
+      state.rpm = 0;
+    } else if (clutchRev) {
+      // Clutch pedal drives reverse proportionally, independent of the throttle.
+      let mag = Math.round(state.clutchReverseBase * (cc.powerLimit / 100));
+      mag = applyThrottleFloor(mag);                     // light press still spins a brushless ESC
+      motor = -Math.min(255, mag);
+      state.vspeed = Math.abs(motor) / 255;
+      state.rpm = 0;
+    } else if (manual && !state.reverse && !cc.coastMode) {
+      // Geared drive WITH simulated engine braking (only when coast mode is off).
+      motor = simManualDrive(base);
+      if (base > dz) motor = applyThrottleFloor(motor);
     } else {
-      motor = scaleMotor(base);                // automatic or reverse: direct/instant
-      state.vspeed = Math.abs(motor) / 255;    // keep sim in sync for smooth mode switches
+      // Automatic, coasting (no engine brake), or button/hold reverse: direct/instant.
+      // On release base = 0 → motor 0 → the car rolls to a soft stop.
+      motor = scaleMotor(base);
+      state.vspeed = Math.abs(motor) / 255;
       state.rpm = manual ? state.vspeed / Math.max(activeGearCaps()[state.gear - 1] / 100, 0.001) : 0;
+      if (base > dz) motor = applyThrottleFloor(motor);
     }
-    // Apply throttle floor last, but ONLY when the driver is actually pressing
-    // the pedal. This ensures the ESC actually spins when it should, without
-    // amplifying tiny sim-brake pulses that fire when the pedal is released
-    // (which would lurch the car backward at every coast/downshift).
-    if (base > state.controls.deadzone) motor = applyThrottleFloor(motor);
 
     // ---- Safety gate: nothing drives unless armed; E-STOP fully neutralizes ----
     if (state.estop) { servo = 90; motor = 0; state.vspeed = 0; }
@@ -2064,11 +2101,13 @@
     if (L.horn)         lights |= LIGHT_HORN;
     // Automatic brake light: motor commanding brake/reverse, or coasting from speed
     // with the pedal released, or user manually holding the brake-light key.
-    const brakingByMotor = (!state.reverse && motor < 0);
-    const brakingByCoast = (base <= state.controls.deadzone && state.vspeed > 0.05 && !state.reverse);
+    const brakingByMotor = (!state.reverse && motor < 0);   // includes the brake pedal
+    // Coasting isn't braking in coast mode, so don't light the brake bar for a roll.
+    const brakingByCoast = (!cc.coastMode && base <= dz && state.vspeed > 0.05 && !state.reverse);
     if (L.brakeManual || brakingByMotor || brakingByCoast) lights |= LIGHT_BRAKE;
-    // Automatic reverse light: reverse engaged AND actually asking for power.
-    if (state.reverse && base > state.controls.deadzone) lights |= LIGHT_REVERSE;
+    // Automatic reverse light: reverse engaged AND actually asking for power
+    // (throttle-driven reverse, or the proportional clutch-reverse pedal).
+    if (state.reverse && (base > dz || clutchRev)) lights |= LIGHT_REVERSE;
 
     if (selected()) sendDrive(servo, motor, lights);
     updateEngineSound();
@@ -2181,13 +2220,29 @@
       const bmapR = activeHotkeyButtons();
       const idx = (bmapR && bmapR.reverse != null) ? bmapR.reverse : c.btnReverse;
       state.reverse = idx != null && !!pad.buttons[idx] && pad.buttons[idx].pressed;
-    } else if (rmode === 'pedal') {
+    } else if (rmode === 'pedal' || rmode === 'clutchThrottle') {
       const ax = c.clutchAxis;
       if (ax != null && pad.axes[ax] !== undefined) {
         const v = pad.axes[ax];
-        const press = c.clutchRest === 'neg' ? (v + 1) / 2 : v;
-        state.reverse = press > 0.5;   // pressed past halfway = reverse
+        const p = Math.max(0, Math.min(1, c.clutchRest === 'neg' ? (v + 1) / 2 : v));
+        if (rmode === 'clutchThrottle') {
+          // Clutch pedal IS a proportional reverse throttle — depth = reverse speed.
+          const b = pedalToPwm(p, 'zero', c.deadzone, c.throttleExpo);
+          state.clutchReverseBase = b;
+          state.reverse = b > 0;
+        } else {
+          state.reverse = p > 0.5;   // hold-to-reverse
+        }
+      } else if (rmode === 'clutchThrottle') {
+        state.clutchReverseBase = 0; state.reverse = false;
       }
+    }
+
+    // Brake pedal press (0..1), used by coast mode for proportional braking.
+    state.brakePress = 0;
+    if (c.coastMode && c.brake != null && pad.axes[c.brake] !== undefined) {
+      const bv = pad.axes[c.brake];
+      state.brakePress = Math.max(0, Math.min(1, c.rest === 'neg' ? (bv + 1) / 2 : bv));
     }
 
     if (edge(c.btnShiftUp))   shiftGear(+1);
@@ -3510,6 +3565,9 @@
     $('mapReverseMode').value = c.reverseMode || 'toggle';
     $('mapClutchRest').value = c.clutchRest || 'neg';
     $('mapTouchCenter').checked = !!c.touchThrottleCenter;
+    $('mapCoast').checked = !!c.coastMode;
+    $('mapBrakeForce').value = c.brakeForce ?? 70;
+    $('mapBrakeForceVal').textContent = (c.brakeForce ?? 70) + '%';
     $('ctrlOverlay').classList.add('open');
     state.testerTimer = setInterval(updateTester, 50);
     updateTester();
@@ -3622,6 +3680,8 @@
       clutchAxis: ($('mapClutch').value === '' ? null : parseInt($('mapClutch').value, 10)),
       clutchRest: $('mapClutchRest').value,
       touchThrottleCenter: $('mapTouchCenter').checked,
+      coastMode: $('mapCoast').checked,
+      brakeForce: Math.max(0, Math.min(100, parseInt($('mapBrakeForce').value, 10) || 0)),
     };
     // Switching away from toggle shouldn't leave reverse stuck on.
     if (state.controls.reverseMode !== 'toggle') state.reverse = false;
@@ -4270,6 +4330,7 @@
     $('ctrlOverlay').addEventListener('click', (e) => { if (e.target === $('ctrlOverlay')) closeCtrlModal(); });
     ['mapSteer','mapThrottle','mapBrake','mapDeadzone','mapRest'].forEach((id) =>
       $(id).addEventListener('change', updateTester));
+    $('mapBrakeForce').addEventListener('input', (e) => { $('mapBrakeForceVal').textContent = e.target.value + '%'; });
 
     // ---- Keyboard: driving + shortcuts ----
     const editable = (el) => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');

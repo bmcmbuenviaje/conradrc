@@ -415,6 +415,16 @@ In **Test & Map Controls** pick how reverse engages:
 - **Toggle** *(default)* — press the reverse button/key once to flip direction.
 - **Hold button (momentary)** — reverse only while the bound button is held.
 - **Clutch pedal (hold to reverse)** — reverse while a pedal **axis** is pressed. Map your wheel's **clutch pedal** to the *Clutch (reverse) pedal axis* and set its rest convention — now the clutch pedal is your reverse.
+- **Clutch pedal = reverse throttle (proportional)** — the clutch pedal becomes a second, **reverse-only throttle**: press it and the car backs up in proportion to how deep you press, independent of the forward throttle. A true two-pedal forward/reverse setup.
+
+### 🐢 Rolling soft stop + progressive brake pedal
+
+Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop**:
+
+- **Let off the throttle → the car rolls to a gentle stop** instead of snapping to a halt (engine braking is disabled — pure coast).
+- **Press the mapped Brake axis pedal → braking in proportion to pedal depth**, up to the **Brake pedal force** you set. Light press = gentle slow; full press = hard stop.
+
+> The app can only command the motor — it can't disable a **drag brake configured in your ESC** itself. If your crawler still stops hard with Rolling soft stop on, turn the ESC's drag-brake setting down/off (via its programming card or throttle-calibration), and the coast will come through.
 
 ### 📱 Centered touch throttle
 
