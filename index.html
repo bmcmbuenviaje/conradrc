@@ -838,6 +838,9 @@
               <button id="qsReverse" class="rev">◄ Reverse: OFF</button>
               <button id="qsSound">🔈 Sound: OFF</button>
             </div>
+            <div class="qs-row qs-btns">
+              <button id="qsCoast">🐢 Coast: OFF</button>
+            </div>
             <div class="qs-row" style="border-top:1px dashed var(--stroke); padding-top:10px;">
               <label>Lights</label>
               <div class="qs-btns" style="margin-bottom:6px;">
@@ -2336,6 +2339,12 @@
     log('Reverse ' + (state.reverse ? 'ENGAGED' : 'off'));
     updateDrivetrainUI();
   }
+  function toggleCoast() {
+    state.controls.coastMode = !state.controls.coastMode;
+    saveControls();
+    log('Rolling soft stop (coast) ' + (state.controls.coastMode ? 'ON — no engine braking; brake pedal slows' : 'OFF'));
+    if ($('qsDrawer')?.classList.contains('open')) syncQuickSettings();
+  }
   function setTransmission(mode) {
     state.controls.transmission = mode;
     if (mode === 'manual') state.gear = 1;
@@ -3245,6 +3254,8 @@
     $('qsReverse').textContent = state.reverse ? '◄ Reverse: ON' : '◄ Reverse: OFF';
     $('qsSound').classList.toggle('on', !!c.sound);
     $('qsSound').textContent = c.sound ? '🔊 Sound: ON' : '🔈 Sound: OFF';
+    $('qsCoast').classList.toggle('on', !!c.coastMode);
+    $('qsCoast').textContent = c.coastMode ? '🐢 Coast: ON' : '🐢 Coast: OFF';
     // Light buttons
     syncLightsUI();
   }
@@ -4160,6 +4171,7 @@
     $('qsEng').addEventListener('input',    (e) => setEngineBrake(parseInt(e.target.value, 10)));
     $('qsReverse').addEventListener('click', toggleReverse);
     $('qsSound').addEventListener('click', toggleSound);
+    $('qsCoast').addEventListener('click', toggleCoast);
     $('qsLightHead').addEventListener('click',   () => toggleLight('head'));
     $('qsLightLeft').addEventListener('click',   () => toggleSignal('left'));
     $('qsLightRight').addEventListener('click',  () => toggleSignal('right'));
