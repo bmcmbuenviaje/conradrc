@@ -50,6 +50,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rc-sim-arcade-${{ matrix.os }}
+          # Short retention: installers are already published to the GitHub
+          # Release above (free storage). This is only a same-day fallback, so
+          # expire it in 1 day to avoid consuming the Actions storage quota.
+          retention-days: 1
           path: |
             dist/*.exe
             dist/*.dmg
