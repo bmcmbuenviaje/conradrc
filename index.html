@@ -117,6 +117,61 @@
     .f1-gear { font-size: 30px; font-weight: 800; line-height: 1; color: var(--text); }
     .f1-spd b { font-size: 16px; } .f1-spd span { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-left: 3px; }
 
+    /* ---- Quick Garage dock (slide-up car switcher) ---- */
+    .garage-dock {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+      transform: translateY(115%); transition: transform .3s cubic-bezier(.2,.9,.2,1);
+      background: linear-gradient(180deg, rgba(8,10,16,0.82), var(--bg-1));
+      border-top: 1px solid var(--stroke); backdrop-filter: blur(12px);
+      padding: 14px 18px 18px; box-shadow: 0 -24px 60px rgba(0,0,0,0.55);
+    }
+    .garage-dock.open { transform: translateY(0); }
+    .garage-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .garage-head h3 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: var(--neon-cyan); }
+    .garage-close { padding: 4px 10px; }
+    .garage-strip { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 8px; }
+    .garage-tile {
+      flex: 0 0 auto; width: 132px; cursor: pointer; text-align: center; padding: 12px 10px;
+      border: 1px solid var(--stroke); border-radius: 12px; background: var(--bg-2);
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    }
+    .garage-tile:hover { transform: translateY(-6px); border-color: var(--accent, var(--neon-cyan)); box-shadow: 0 12px 30px rgba(0,0,0,0.5); }
+    .garage-tile.active { border-color: var(--accent, var(--neon-lime)); box-shadow: 0 0 0 2px var(--accent, var(--neon-lime)) inset; }
+    .garage-tile .gsprite { font-size: 42px; line-height: 1; transition: transform .2s ease; }
+    .garage-tile .gname { font-size: 12px; font-weight: 700; margin-top: 6px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .garage-tile .gmac { font-size: 9px; color: var(--text-dim); font-family: Consolas, monospace; }
+    @media (prefers-reduced-motion: no-preference) {
+      .garage-tile:hover .gsprite { transform: scale(1.18) rotate(-7deg); }
+      @keyframes gpop { 0%{ transform: scale(1); } 40%{ transform: scale(1.14) translateY(-4px); } 100%{ transform: scale(1); } }
+      .garage-tile.pop { animation: gpop .34s ease; }
+      @keyframes vpflash { 0%{ outline-color: var(--flash); } 100%{ outline-color: transparent; } }
+      .viewport.flash { outline: 3px solid transparent; outline-offset: -3px; animation: vpflash .55s ease; }
+    }
+
+    /* ---- Arcade-only flourishes: glassmorphism + subtle motion (data-flat=0) ---- */
+    :root[data-flat="0"] .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 42%), var(--panel);
+      border-top-color: rgba(255,255,255,0.14);
+    }
+    :root[data-flat="0"] .viewport {
+      border-top-color: rgba(255,255,255,0.14);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      @keyframes rcGlow  { 0%,100%{ text-shadow: 0 0 calc(10px*var(--glow)) currentColor; } 50%{ text-shadow: 0 0 calc(24px*var(--glow)) currentColor; } }
+      @keyframes rcPulse { 0%,100%{ opacity: .82; } 50%{ opacity: 1; } }
+      @keyframes rcSlide { 0%{ transform: translateX(-100%); } 100%{ transform: translateX(100%); } }
+      :root[data-flat="0"] .brand .accent,
+      :root[data-flat="0"] .brand .accent-2 { animation: rcGlow 3.4s ease-in-out infinite; }
+      :root[data-flat="0"] .safety-badge.armed,
+      :root[data-flat="0"] .car.active { animation: rcPulse 1.8s ease-in-out infinite; }
+      :root[data-flat="0"] .side-tabs button.active { position: relative; overflow: hidden; }
+      :root[data-flat="0"] .side-tabs button.active::after {
+        content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+        background: linear-gradient(90deg, transparent, var(--neon-cyan), transparent);
+        animation: rcSlide 2.2s linear infinite;
+      }
+    }
+
     /* ---------- Header ---------- */
     header {
       display: flex;
@@ -631,6 +686,7 @@
       <div class="chip" id="chipGamepad"><span class="dot"></span> Wheel</div>
       <div class="chip" id="chipSerial"><span class="dot"></span> Transmitter</div>
       <div class="chip" id="chipVideo"><span class="dot"></span> FPV Feed</div>
+      <button class="chip" id="btnGarage" title="Quick garage — switch cars (G)" style="cursor:pointer;">🏎 Garage</button>
       <button class="chip" id="btnAdmin" title="Appearance & Admin (theme, sizes, feature toggles)" style="cursor:pointer;">🎨 Theme</button>
     </div>
   </header>
@@ -1059,6 +1115,15 @@
       </section>
     </section>
   </main>
+
+  <!-- Quick Garage dock — slide-up car switcher (fun + no scrolling) -->
+  <div class="garage-dock" id="garageDock">
+    <div class="garage-head">
+      <h3>🏎 Garage — tap to drive</h3>
+      <button class="garage-close" id="garageClose" title="Close (G / Esc)">✕</button>
+    </div>
+    <div class="garage-strip" id="garageStrip"></div>
+  </div>
 
   <footer>ESP-NOW MESH · WEB SERIAL 115200 · &lt;20MS TARGET LATENCY · STATIC BUILD</footer>
 
@@ -1592,7 +1657,12 @@
     } catch (_) { state.vehicles = structuredClone(DEFAULT_VEHICLES); }
     if (!Array.isArray(state.vehicles) || !state.vehicles.length) state.vehicles = structuredClone(DEFAULT_VEHICLES);
   }
-  function saveRoster() { try { localStorage.setItem(LS_VEHICLES, JSON.stringify(state.vehicles)); } catch (_) {} }
+  function saveRoster() {
+    try { localStorage.setItem(LS_VEHICLES, JSON.stringify(state.vehicles)); } catch (_) {}
+    // Keep the garage dock in sync when the roster actually changes (add/edit/delete),
+    // but NOT on mere selection (which would detach a tile mid-click).
+    if (typeof renderGarageDock === 'function' && $('garageDock') && $('garageDock').classList.contains('open')) renderGarageDock();
+  }
   function loadControls() {
     try {
       const raw = localStorage.getItem(LS_CONTROLS);
@@ -4476,6 +4546,40 @@
     syncDriverBar();
   }
 
+  // Quick Garage dock — a fun, scroll-free car switcher.
+  function renderGarageDock() {
+    const strip = $('garageStrip'); if (!strip) return;
+    strip.innerHTML = state.vehicles.map((v) => `
+      <div class="garage-tile ${v.id === state.selectedId ? 'active' : ''}" data-id="${v.id}" style="--accent:${esc(v.accent)}">
+        <div class="gsprite">${esc(v.sprite || '🚗')}</div>
+        <div class="gname">${esc(v.name)}</div>
+        <div class="gmac">${esc(v.mac.slice(-8))}</div>
+      </div>`).join('') +
+      `<div class="garage-tile gadd" data-add="1"><div class="gsprite">＋</div><div class="gname">Register</div><div class="gmac">new car</div></div>`;
+    strip.querySelectorAll('.garage-tile').forEach((t) => t.addEventListener('click', () => {
+      if (t.dataset.add) { openCarModal(null); return; }
+      selectVehicle(t.dataset.id);
+      t.classList.remove('pop'); void t.offsetWidth; t.classList.add('pop');     // bounce
+      const v = state.vehicles.find((x) => x.id === t.dataset.id);
+      const vp = $('viewport');
+      if (vp && v) { vp.style.setProperty('--flash', v.accent); vp.classList.remove('flash'); void vp.offsetWidth; vp.classList.add('flash'); }
+      strip.querySelectorAll('.garage-tile').forEach((x) => x.classList.toggle('active', x === t));
+    }));
+  }
+  function toggleGarage() {
+    const d = $('garageDock'); if (!d) return;
+    const open = d.classList.toggle('open');
+    if (open) renderGarageDock();
+    $('btnGarage') && $('btnGarage').classList.toggle('on', open);
+  }
+  function wireGarage() {
+    $('btnGarage').addEventListener('click', toggleGarage);
+    $('garageClose').addEventListener('click', () => { $('garageDock').classList.remove('open'); $('btnGarage').classList.remove('on'); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && $('garageDock').classList.contains('open')) { $('garageDock').classList.remove('open'); $('btnGarage').classList.remove('on'); }
+    });
+  }
+
   function openAdmin() { adminSnapshot = JSON.stringify(appearance); $('adminOverlay').classList.add('open'); renderAdmin(); }
   function closeAdmin(revert) {
     if (revert && adminSnapshot) { try { appearance = JSON.parse(adminSnapshot); } catch (_) {} applyAppearance(); }
@@ -4553,6 +4657,7 @@
     loadAppearance();
     wireAdmin();
     wireDriverBar();
+    wireGarage();
     buildShiftLights();
     renderGrid();
     enumerateVideo();
