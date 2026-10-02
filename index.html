@@ -96,6 +96,27 @@
     /* Elements hidden via Admin feature toggles. */
     .appearance-off { display: none !important; }
 
+    /* ---- F1 broadcast-style bar telemetry ---- */
+    .f1-telem {
+      display: none; position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%);
+      width: min(560px, 88%); padding: 10px 14px; border-radius: 10px; z-index: 7;
+      background: rgba(8,10,14,0.62); border: 1px solid var(--stroke); backdrop-filter: blur(6px);
+      pointer-events: none; font-variant-numeric: tabular-nums;
+    }
+    :root[data-f1="1"] .f1-telem { display: block; }
+    .f1-revs { height: 6px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; margin-bottom: 10px; }
+    .f1-revs i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #22d3a0, #b6ff00 55%, #ffb020 80%, #ff4d5e); transition: width 60ms linear; }
+    .f1-main { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+    .f1-ped { display: flex; align-items: center; gap: 8px; }
+    .f1-lab { font-size: 10px; letter-spacing: 1.5px; color: var(--text-dim); font-weight: 700; }
+    .f1-bar { flex: 1; height: 16px; border-radius: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
+    .f1-bar i { display: block; height: 100%; width: 0%; transition: width 60ms linear; }
+    .f1-bar i.thr { background: linear-gradient(90deg, #15803d, #22c55e); }
+    .f1-bar i.brk { background: linear-gradient(270deg, #b91c1c, #ef4444); margin-left: auto; }
+    .f1-mid { text-align: center; min-width: 66px; }
+    .f1-gear { font-size: 30px; font-weight: 800; line-height: 1; color: var(--text); }
+    .f1-spd b { font-size: 16px; } .f1-spd span { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; margin-left: 3px; }
+
     /* ---------- Header ---------- */
     header {
       display: flex;
@@ -860,6 +881,15 @@
             <div class="val" id="hudThrottle">0</div>
           </div>
         </div>
+        <!-- F1 broadcast-style bar telemetry (Cockpit theme / toggleable) -->
+        <div class="f1-telem" id="f1Telem">
+          <div class="f1-revs"><i id="f1Revs"></i></div>
+          <div class="f1-main">
+            <div class="f1-ped"><span class="f1-lab">THR</span><div class="f1-bar"><i class="thr" id="f1Thr"></i></div></div>
+            <div class="f1-mid"><div class="f1-gear" id="f1Gear">N</div><div class="f1-spd"><b id="f1Spd">0</b><span>SPD</span></div></div>
+            <div class="f1-ped"><div class="f1-bar"><i class="brk" id="f1Brk"></i></div><span class="f1-lab">BRK</span></div>
+          </div>
+        </div>
         <button class="vp-btn" id="btnFullscreen" title="Toggle fullscreen">⛶ Fullscreen</button>
         <button class="vp-btn vp-snap" id="btnSnapshot" title="Save a still frame">📷</button>
         <button class="vp-btn vp-cog" id="btnQuickSettings" title="Quick settings (Tab)">⚙</button>
@@ -1298,6 +1328,7 @@
         <div class="field"><label>Effects</label>
           <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);"><input type="checkbox" id="adScan" style="width:auto;"> CRT scanlines</label>
           <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);margin-top:6px;"><input type="checkbox" id="adWash" style="width:auto;"> Background glow wash</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);margin-top:6px;"><input type="checkbox" id="adF1" style="width:auto;"> F1 telemetry bar</label>
         </div>
       </div>
 
@@ -2437,6 +2468,20 @@
     gEl.style.color = state.reverse ? 'var(--neon-amber)'
       : (manual && state.rpm >= REDLINE ? 'var(--bad)' : 'var(--neon-lime)');
     const dg = $('driverGear'); if (dg) { dg.textContent = gnum; dg.style.color = gEl.style.color; }
+
+    // F1 bar telemetry (updates only when the strip is on-screen)
+    if (document.documentElement.getAttribute('data-f1') === '1') {
+      const revs = $('f1Revs');
+      if (revs) {
+        revs.style.width = Math.max(0, Math.min(100, (state.rpm || 0) * 100)) + '%';
+        const thr = motor > 0 ? (motor / 255) * 100 : 0;
+        const brk = (motor < 0 && !state.reverse) ? (-motor / 255) * 100 : ((state.brakePress || 0) * 100);
+        $('f1Thr').style.width = Math.round(thr) + '%';
+        $('f1Brk').style.width = Math.round(Math.min(100, brk)) + '%';
+        $('f1Gear').textContent = gnum;
+        $('f1Spd').textContent = Math.round((state.vspeed || 0) * 100);
+      }
+    }
 
     const caption = manual
       ? (state.reverse ? 'REVERSE' : activeGearCaps()[state.gear - 1] + '% CAP') + ' · ' + state.controls.powerLimit + '% PWR'
@@ -4304,21 +4349,21 @@
   const UI_FEATURES = [['hud','HUD overlay'], ['touch','Touch controls'], ['chips','Status chips']];
 
   const THEME_PRESETS = {
-    cockpit: { label:'Sim Cockpit', flat:true, layout:'standard', scanlines:false, tokens:{
+    cockpit: { label:'Sim Cockpit', flat:true, layout:'standard', scanlines:false, f1:true, tokens:{
       '--bg-0':'#0e1116','--bg-1':'#141922','--bg-2':'#1c2230','--panel':'rgba(22,28,38,0.92)',
       '--stroke':'rgba(120,150,190,0.22)','--neon-cyan':'#3b82f6','--neon-magenta':'#60a5fa',
       '--neon-lime':'#22d3a0','--neon-amber':'#f59e0b','--text':'#eef2f8','--text-dim':'#8894a8',
       '--ok':'#22d3a0','--bad':'#ef4444','--font':"'Inter','Segoe UI',system-ui,sans-serif",
       '--radius':'10px','--glow':'0.25','--letter':'0.2px',
       '--bg-glow-1':'rgba(59,130,246,0.05)','--bg-glow-2':'rgba(59,130,246,0.03)' } },
-    arcade: { label:'Neon Arcade', flat:false, layout:'standard', scanlines:true, tokens:{
+    arcade: { label:'Neon Arcade', flat:false, layout:'standard', scanlines:true, f1:false, tokens:{
       '--bg-0':'#05060a','--bg-1':'#0b0f1a','--bg-2':'#121826','--panel':'rgba(18,24,38,0.85)',
       '--stroke':'rgba(0,229,255,0.25)','--neon-cyan':'#00e5ff','--neon-magenta':'#ff2e97',
       '--neon-lime':'#b6ff00','--neon-amber':'#ffb020','--text':'#e8f0ff','--text-dim':'#7f8db0',
       '--ok':'#29ff9b','--bad':'#ff4d5e','--font':"'Segoe UI','Rajdhani',system-ui,sans-serif",
       '--radius':'14px','--glow':'1','--letter':'0.4px',
       '--bg-glow-1':'rgba(0,229,255,0.08)','--bg-glow-2':'rgba(255,46,151,0.08)' } },
-    minimal: { label:'Minimal Driver', flat:true, layout:'driver', scanlines:false, tokens:{
+    minimal: { label:'Minimal Driver', flat:true, layout:'driver', scanlines:false, f1:false, tokens:{
       '--bg-0':'#0a0c10','--bg-1':'#0f1216','--bg-2':'#161a20','--panel':'rgba(20,24,30,0.9)',
       '--stroke':'rgba(160,170,185,0.18)','--neon-cyan':'#e8eaed','--neon-magenta':'#9aa3af',
       '--neon-lime':'#34d399','--neon-amber':'#fbbf24','--text':'#f3f5f7','--text-dim':'#9aa3af',
@@ -4329,7 +4374,7 @@
 
   function defaultAppearance() {
     return { preset:'arcade', tokens:{}, ui:100, hud:100, radius:null, glow:null,
-             layout:null, scanlines:null, wash:true, sidebar:'tabs', features:{} };
+             layout:null, scanlines:null, wash:true, sidebar:'tabs', f1:null, features:{} };
   }
 
   // Group the long sidebar into Drive / Setup / Race tabs so only a short set
@@ -4401,6 +4446,8 @@
     root.setAttribute('data-sidebar', appearance.sidebar || 'tabs');
     const scan = appearance.scanlines == null ? preset.scanlines : appearance.scanlines;
     document.body.setAttribute('data-fx-scanlines', scan ? '1' : '0');
+    const f1 = appearance.f1 == null ? preset.f1 : appearance.f1;
+    root.setAttribute('data-f1', f1 ? '1' : '0');
     if (appearance.wash === false) { root.style.setProperty('--bg-glow-1', 'transparent'); root.style.setProperty('--bg-glow-2', 'transparent'); }
     // Feature toggles
     const f = appearance.features || {};
@@ -4459,6 +4506,7 @@
     $('adSidebar').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.sidebar === sbMode));
     $('adScan').checked = appearance.scanlines == null ? THEME_PRESETS[preset].scanlines : appearance.scanlines;
     $('adWash').checked = appearance.wash !== false;
+    $('adF1').checked = appearance.f1 == null ? THEME_PRESETS[preset].f1 : appearance.f1;
     const f = appearance.features || {};
     const box = $('adminFeatures'); box.innerHTML = '';
     const addToggle = (key, label) => { const on = f[key] !== false;
@@ -4486,6 +4534,7 @@
     $('adGlow').addEventListener('input', (e) => { appearance.glow = +e.target.value; $('adGlowVal').textContent = e.target.value + '%'; applyAppearance(); });
     $('adScan').addEventListener('change', (e) => { appearance.scanlines = e.target.checked; applyAppearance(); });
     $('adWash').addEventListener('change', (e) => { appearance.wash = e.target.checked; applyAppearance(); });
+    $('adF1').addEventListener('change', (e) => { appearance.f1 = e.target.checked; applyAppearance(); });
     $('adSave').addEventListener('click', () => { saveAppearance(); adminSnapshot = JSON.stringify(appearance); log('🎨 Appearance saved — this look sticks until you change it.'); closeAdmin(false); });
     $('adReset').addEventListener('click', () => { selectPreset(appearance.preset); appearance.features = {}; applyAppearance(); renderAdmin(); });
     $('adExport').addEventListener('click', () => { const io = $('adIO'); io.style.display = 'block'; io.value = JSON.stringify(appearance); io.focus(); io.select(); log('🎨 Look JSON ready — copy it.'); });
