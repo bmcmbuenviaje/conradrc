@@ -27,6 +27,13 @@
       --ok:          #29ff9b;
       --bad:         #ff4d5e;
       --font:        'Segoe UI', 'Rajdhani', system-ui, sans-serif;
+      /* ---- Appearance engine tokens (driven by the Admin panel) ---- */
+      --radius:      14px;       /* base corner radius */
+      --glow:        1;          /* neon glow multiplier (0 = flat) */
+      --ui-scale:    1;          /* global UI zoom */
+      --letter:      0.4px;      /* body letter-spacing */
+      --bg-glow-1:   rgba(0,229,255,0.08);   /* top-right background wash */
+      --bg-glow-2:   rgba(255,46,151,0.08);  /* bottom-left background wash */
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,13 +42,44 @@
       font-family: var(--font);
       color: var(--text);
       background:
-        radial-gradient(1200px 600px at 80% -10%, rgba(0,229,255,0.08), transparent 60%),
-        radial-gradient(900px 500px at -10% 110%, rgba(255,46,151,0.08), transparent 60%),
+        radial-gradient(1200px 600px at 80% -10%, var(--bg-glow-1), transparent 60%),
+        radial-gradient(900px 500px at -10% 110%, var(--bg-glow-2), transparent 60%),
         var(--bg-0);
       min-height: 100vh;
-      letter-spacing: 0.4px;
+      letter-spacing: var(--letter);
       overflow-x: hidden;
+      zoom: var(--ui-scale);     /* Admin "UI size" slider (Chromium) */
     }
+
+    /* ================= APPEARANCE ENGINE ==================
+       Presets write the tokens above onto :root; these rules make radius
+       and glow respond to them, and define the alternate layouts. ------ */
+    .panel { border-radius: var(--radius); }
+    .viewport { border-radius: var(--radius); }
+    button, input, select, .chip, textarea { border-radius: calc(var(--radius) - 4px); }
+    /* Glow intensity — scales the signature neon shadows by --glow. */
+    .brand .accent     { text-shadow: 0 0 calc(12px * var(--glow)) var(--neon-cyan); }
+    .brand .accent-2   { text-shadow: 0 0 calc(12px * var(--glow)) var(--neon-magenta); }
+    .hud .val          { text-shadow: 0 0 calc(6px * var(--glow)) rgba(0,0,0,0.9), 0 0 calc(10px * var(--glow)) currentColor; }
+    .viewport          { box-shadow: 0 0 calc(60px * var(--glow)) rgba(0,229,255,0.08) inset; }
+    /* Theme flags: flat kills decorative shadows for the Cockpit/Minimal looks. */
+    :root[data-flat="1"] .panel { box-shadow: none; }
+    :root[data-flat="1"] header { backdrop-filter: none; }
+
+    /* ---- Layout: Minimal Driver (full-bleed FPV, chrome recedes) ---- */
+    :root[data-layout="driver"] .sidebar { display: none; }
+    :root[data-layout="driver"] main { grid-template-columns: 1fr; padding: 10px; }
+    :root[data-layout="driver"] header { padding: 8px 16px; }
+    :root[data-layout="driver"] .viewport { max-height: calc(100vh - 90px); }
+
+    /* ---- Optional FX: CRT scanlines (Arcade) ---- */
+    body[data-fx-scanlines="1"]::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,0.16), rgba(0,0,0,0.16) 1px, transparent 2px, transparent 3px);
+      mix-blend-mode: overlay;
+    }
+    /* Elements hidden via Admin feature toggles. */
+    .appearance-off { display: none !important; }
 
     /* ---------- Header ---------- */
     header {
@@ -535,6 +573,7 @@
       <div class="chip" id="chipGamepad"><span class="dot"></span> Wheel</div>
       <div class="chip" id="chipSerial"><span class="dot"></span> Transmitter</div>
       <div class="chip" id="chipVideo"><span class="dot"></span> FPV Feed</div>
+      <button class="chip" id="btnAdmin" title="Appearance & Admin (theme, sizes, feature toggles)" style="cursor:pointer;">🎨 Theme</button>
     </div>
   </header>
 
@@ -1162,6 +1201,65 @@
       <div class="modal-actions">
         <button class="primary" id="ctrlSave">Save Mapping</button>
         <button id="ctrlClose">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MODAL: Appearance / Admin ============ -->
+  <div class="overlay" id="adminOverlay">
+    <div class="modal" style="max-width:660px; max-height:90vh; overflow:auto;">
+      <h3>🎨 Appearance &amp; Admin</h3>
+
+      <div class="field"><label>Theme preset</label>
+        <div class="btn-row" id="adminPreset">
+          <button data-preset="cockpit">🏎 Sim Cockpit</button>
+          <button data-preset="arcade">◉ Neon Arcade</button>
+          <button data-preset="minimal">▣ Minimal Driver</button>
+        </div>
+      </div>
+
+      <div class="field-row" style="flex-wrap:wrap;">
+        <div class="field"><label for="adAccent">Accent</label><input type="color" id="adAccent" style="height:34px;padding:2px;"></div>
+        <div class="field"><label for="adAccent2">Accent 2</label><input type="color" id="adAccent2" style="height:34px;padding:2px;"></div>
+        <div class="field"><label for="adBg">Background</label><input type="color" id="adBg" style="height:34px;padding:2px;"></div>
+        <div class="field"><label for="adPanel">Panel</label><input type="color" id="adPanel" style="height:34px;padding:2px;"></div>
+        <div class="field"><label for="adText">Text</label><input type="color" id="adText" style="height:34px;padding:2px;"></div>
+      </div>
+
+      <div class="field-row">
+        <div class="field"><label for="adUi">UI size <b id="adUiVal">100%</b></label><input type="range" id="adUi" min="70" max="140" step="5" value="100"></div>
+        <div class="field"><label for="adHud">HUD size <b id="adHudVal">100%</b></label><input type="range" id="adHud" min="60" max="160" step="5" value="100"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="adRad">Corner radius <b id="adRadVal">14px</b></label><input type="range" id="adRad" min="0" max="26" step="1" value="14"></div>
+        <div class="field"><label for="adGlow">Glow <b id="adGlowVal">100%</b></label><input type="range" id="adGlow" min="0" max="150" step="10" value="100"></div>
+      </div>
+
+      <div class="field-row">
+        <div class="field"><label>Layout</label>
+          <div class="btn-row" id="adLayout">
+            <button data-layout="standard">Standard</button>
+            <button data-layout="driver">Driver (full-bleed)</button>
+          </div>
+        </div>
+        <div class="field"><label>Effects</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);"><input type="checkbox" id="adScan" style="width:auto;"> CRT scanlines</label>
+          <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);margin-top:6px;"><input type="checkbox" id="adWash" style="width:auto;"> Background glow wash</label>
+        </div>
+      </div>
+
+      <div class="field"><label>Panels &amp; features — toggle what shows</label>
+        <div id="adminFeatures" style="display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; margin-top:6px;"></div>
+      </div>
+
+      <div class="hint">Everything previews live. <b>Save look</b> keeps this theme, sizes, and toggles until you change them. <b>Export</b> gives you a JSON to paste into <b>Import</b> on another cabinet.</div>
+      <textarea id="adIO" placeholder="Paste a look JSON here, then click Import" style="display:none;width:100%;height:78px;margin-top:8px;background:var(--bg-2);color:var(--text);border:1px solid var(--stroke);border-radius:8px;font-family:Consolas,monospace;font-size:11px;padding:8px;"></textarea>
+      <div class="modal-actions" style="flex-wrap:wrap; gap:8px;">
+        <button class="primary" id="adSave">Save look</button>
+        <button id="adReset">Reset to preset</button>
+        <button id="adExport">Export</button>
+        <button id="adImport">Import</button>
+        <button id="adClose">Close</button>
       </div>
     </div>
   </div>
@@ -4138,11 +4236,159 @@
   }
 
   /* =================================================================
+     APPEARANCE ENGINE — themes, remix, sizes, feature toggles (persisted)
+     ================================================================= */
+  const APPEARANCE_KEY = 'rcarcade.appearance';
+  const PANEL_FEATURES = [
+    ['safety','Safety'], ['transmitter','USB Transmitter'], ['wheel','Racing Wheel'],
+    ['drivetrain','Drivetrain'], ['steering','Steering Tuning'], ['timer','Race Timer'],
+    ['leaderboard','Leaderboard'], ['sessionlog','Session Log'], ['fpv','FPV Video'],
+    ['telemetry','Telemetry Log'], ['garage','Select Your Vehicle'],
+  ];
+  const UI_FEATURES = [['hud','HUD overlay'], ['touch','Touch controls'], ['chips','Status chips']];
+
+  const THEME_PRESETS = {
+    cockpit: { label:'Sim Cockpit', flat:true, layout:'standard', scanlines:false, tokens:{
+      '--bg-0':'#0e1116','--bg-1':'#141922','--bg-2':'#1c2230','--panel':'rgba(22,28,38,0.92)',
+      '--stroke':'rgba(120,150,190,0.22)','--neon-cyan':'#3b82f6','--neon-magenta':'#60a5fa',
+      '--neon-lime':'#22d3a0','--neon-amber':'#f59e0b','--text':'#eef2f8','--text-dim':'#8894a8',
+      '--ok':'#22d3a0','--bad':'#ef4444','--font':"'Inter','Segoe UI',system-ui,sans-serif",
+      '--radius':'10px','--glow':'0.25','--letter':'0.2px',
+      '--bg-glow-1':'rgba(59,130,246,0.05)','--bg-glow-2':'rgba(59,130,246,0.03)' } },
+    arcade: { label:'Neon Arcade', flat:false, layout:'standard', scanlines:true, tokens:{
+      '--bg-0':'#05060a','--bg-1':'#0b0f1a','--bg-2':'#121826','--panel':'rgba(18,24,38,0.85)',
+      '--stroke':'rgba(0,229,255,0.25)','--neon-cyan':'#00e5ff','--neon-magenta':'#ff2e97',
+      '--neon-lime':'#b6ff00','--neon-amber':'#ffb020','--text':'#e8f0ff','--text-dim':'#7f8db0',
+      '--ok':'#29ff9b','--bad':'#ff4d5e','--font':"'Segoe UI','Rajdhani',system-ui,sans-serif",
+      '--radius':'14px','--glow':'1','--letter':'0.4px',
+      '--bg-glow-1':'rgba(0,229,255,0.08)','--bg-glow-2':'rgba(255,46,151,0.08)' } },
+    minimal: { label:'Minimal Driver', flat:true, layout:'driver', scanlines:false, tokens:{
+      '--bg-0':'#0a0c10','--bg-1':'#0f1216','--bg-2':'#161a20','--panel':'rgba(20,24,30,0.9)',
+      '--stroke':'rgba(160,170,185,0.18)','--neon-cyan':'#e8eaed','--neon-magenta':'#9aa3af',
+      '--neon-lime':'#34d399','--neon-amber':'#fbbf24','--text':'#f3f5f7','--text-dim':'#9aa3af',
+      '--ok':'#34d399','--bad':'#f87171','--font':"'Inter','Segoe UI',system-ui,sans-serif",
+      '--radius':'8px','--glow':'0','--letter':'0.2px',
+      '--bg-glow-1':'rgba(255,255,255,0.02)','--bg-glow-2':'rgba(255,255,255,0.01)' } },
+  };
+
+  function defaultAppearance() {
+    return { preset:'arcade', tokens:{}, ui:100, hud:100, radius:null, glow:null,
+             layout:null, scanlines:null, wash:true, features:{} };
+  }
+  let appearance = defaultAppearance();
+  let adminSnapshot = null;
+
+  function loadAppearance() {
+    try { const s = JSON.parse(localStorage.getItem(APPEARANCE_KEY) || 'null');
+      if (s && typeof s === 'object') appearance = Object.assign(defaultAppearance(), s); } catch (_) {}
+    applyAppearance();
+  }
+  function saveAppearance() { try { localStorage.setItem(APPEARANCE_KEY, JSON.stringify(appearance)); } catch (_) {} }
+
+  function panelByLabel(label) {
+    return [...document.querySelectorAll('.panel')].find((p) => { const h = p.querySelector('h2'); return h && h.textContent.includes(label); });
+  }
+  function hexOf(v) { v = String(v || ''); return v[0] === '#' ? v.slice(0, 7) : '#000000'; }
+
+  function effectiveTokens() {
+    const preset = THEME_PRESETS[appearance.preset] || THEME_PRESETS.arcade;
+    const t = { ...preset.tokens, ...(appearance.tokens || {}) };
+    if (appearance.radius != null) t['--radius'] = appearance.radius + 'px';
+    if (appearance.glow != null)   t['--glow'] = String(appearance.glow / 100);
+    t['--ui-scale']  = String((appearance.ui  || 100) / 100);
+    // Only drive --hud-scale when the user actually changed it, so the existing
+    // per-widget HUD-scale control isn't reset to 1 on every boot.
+    if ((appearance.hud || 100) !== 100) t['--hud-scale'] = String(appearance.hud / 100);
+    return { preset, tokens: t };
+  }
+
+  function applyAppearance() {
+    const { preset, tokens } = effectiveTokens();
+    const root = document.documentElement;
+    for (const [k, v] of Object.entries(tokens)) root.style.setProperty(k, v);
+    root.setAttribute('data-flat', preset.flat ? '1' : '0');
+    root.setAttribute('data-layout', appearance.layout || preset.layout || 'standard');
+    const scan = appearance.scanlines == null ? preset.scanlines : appearance.scanlines;
+    document.body.setAttribute('data-fx-scanlines', scan ? '1' : '0');
+    if (appearance.wash === false) { root.style.setProperty('--bg-glow-1', 'transparent'); root.style.setProperty('--bg-glow-2', 'transparent'); }
+    // Feature toggles
+    const f = appearance.features || {};
+    PANEL_FEATURES.forEach(([key, label]) => { const el = panelByLabel(label); if (el) el.classList.toggle('appearance-off', f['panel.' + key] === false); });
+    const hud = document.querySelector('.hud');   if (hud) hud.classList.toggle('appearance-off', f['ui.hud'] === false);
+    const tov = $('touchOverlay');                if (tov) tov.classList.toggle('appearance-off', f['ui.touch'] === false);
+    document.querySelectorAll('.status-chips .chip').forEach((c) => { if (c.id !== 'btnAdmin') c.classList.toggle('appearance-off', f['ui.chips'] === false); });
+  }
+
+  function openAdmin() { adminSnapshot = JSON.stringify(appearance); $('adminOverlay').classList.add('open'); renderAdmin(); }
+  function closeAdmin(revert) {
+    if (revert && adminSnapshot) { try { appearance = JSON.parse(adminSnapshot); } catch (_) {} applyAppearance(); }
+    $('adminOverlay').classList.remove('open'); $('adIO').style.display = 'none';
+  }
+  function setToken(k, v) { appearance.tokens = appearance.tokens || {}; appearance.tokens[k] = v; applyAppearance(); }
+  function selectPreset(name) {
+    appearance.preset = name; appearance.tokens = {}; appearance.radius = null; appearance.glow = null;
+    appearance.layout = null; appearance.scanlines = null; appearance.ui = 100; appearance.hud = 100; appearance.wash = true;
+    applyAppearance(); renderAdmin();
+  }
+  function renderAdmin() {
+    const { tokens } = effectiveTokens();
+    $('adAccent').value  = hexOf(tokens['--neon-cyan']);
+    $('adAccent2').value = hexOf(tokens['--neon-magenta']);
+    $('adBg').value      = hexOf(tokens['--bg-0']);
+    $('adPanel').value   = hexOf(tokens['--bg-2']);
+    $('adText').value    = hexOf(tokens['--text']);
+    $('adUi').value = appearance.ui || 100;  $('adUiVal').textContent  = (appearance.ui || 100) + '%';
+    $('adHud').value = appearance.hud || 100; $('adHudVal').textContent = (appearance.hud || 100) + '%';
+    const rad = appearance.radius != null ? appearance.radius : parseInt(tokens['--radius']); $('adRad').value = rad; $('adRadVal').textContent = rad + 'px';
+    const glow = appearance.glow != null ? appearance.glow : Math.round(parseFloat(tokens['--glow']) * 100); $('adGlow').value = glow; $('adGlowVal').textContent = glow + '%';
+    const preset = appearance.preset;
+    $('adminPreset').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.preset === preset));
+    const layout = appearance.layout || THEME_PRESETS[preset].layout;
+    $('adLayout').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.layout === layout));
+    $('adScan').checked = appearance.scanlines == null ? THEME_PRESETS[preset].scanlines : appearance.scanlines;
+    $('adWash').checked = appearance.wash !== false;
+    const f = appearance.features || {};
+    const box = $('adminFeatures'); box.innerHTML = '';
+    const addToggle = (key, label) => { const on = f[key] !== false;
+      box.insertAdjacentHTML('beforeend', `<label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:12px;color:var(--text);"><input type="checkbox" data-fk="${key}" ${on ? 'checked' : ''} style="width:auto;"> ${esc(label)}</label>`); };
+    PANEL_FEATURES.forEach(([k, label]) => addToggle('panel.' + k, 'Panel · ' + label));
+    UI_FEATURES.forEach(([k, label]) => addToggle('ui.' + k, label));
+    box.querySelectorAll('input[type=checkbox]').forEach((cb) => cb.addEventListener('change', () => {
+      appearance.features = appearance.features || {}; appearance.features[cb.dataset.fk] = cb.checked; applyAppearance(); }));
+  }
+  function wireAdmin() {
+    $('btnAdmin').addEventListener('click', openAdmin);
+    $('adClose').addEventListener('click', () => closeAdmin(true));
+    $('adminOverlay').addEventListener('click', (e) => { if (e.target === $('adminOverlay')) closeAdmin(true); });
+    $('adminPreset').addEventListener('click', (e) => { const b = e.target.closest('button[data-preset]'); if (b) selectPreset(b.dataset.preset); });
+    $('adLayout').addEventListener('click', (e) => { const b = e.target.closest('button[data-layout]'); if (b) { appearance.layout = b.dataset.layout; applyAppearance(); renderAdmin(); } });
+    $('adAccent').addEventListener('input',  (e) => setToken('--neon-cyan', e.target.value));
+    $('adAccent2').addEventListener('input', (e) => { setToken('--neon-magenta', e.target.value); setToken('--stroke', e.target.value + '55'); });
+    $('adBg').addEventListener('input',      (e) => { setToken('--bg-0', e.target.value); setToken('--bg-1', e.target.value); });
+    $('adPanel').addEventListener('input',   (e) => { setToken('--bg-2', e.target.value); setToken('--panel', e.target.value); });
+    $('adText').addEventListener('input',    (e) => setToken('--text', e.target.value));
+    $('adUi').addEventListener('input',   (e) => { appearance.ui = +e.target.value; $('adUiVal').textContent = e.target.value + '%'; applyAppearance(); });
+    $('adHud').addEventListener('input',  (e) => { appearance.hud = +e.target.value; $('adHudVal').textContent = e.target.value + '%'; applyAppearance(); });
+    $('adRad').addEventListener('input',  (e) => { appearance.radius = +e.target.value; $('adRadVal').textContent = e.target.value + 'px'; applyAppearance(); });
+    $('adGlow').addEventListener('input', (e) => { appearance.glow = +e.target.value; $('adGlowVal').textContent = e.target.value + '%'; applyAppearance(); });
+    $('adScan').addEventListener('change', (e) => { appearance.scanlines = e.target.checked; applyAppearance(); });
+    $('adWash').addEventListener('change', (e) => { appearance.wash = e.target.checked; applyAppearance(); });
+    $('adSave').addEventListener('click', () => { saveAppearance(); adminSnapshot = JSON.stringify(appearance); log('🎨 Appearance saved — this look sticks until you change it.'); closeAdmin(false); });
+    $('adReset').addEventListener('click', () => { selectPreset(appearance.preset); appearance.features = {}; applyAppearance(); renderAdmin(); });
+    $('adExport').addEventListener('click', () => { const io = $('adIO'); io.style.display = 'block'; io.value = JSON.stringify(appearance); io.focus(); io.select(); log('🎨 Look JSON ready — copy it.'); });
+    $('adImport').addEventListener('click', () => { const io = $('adIO'); if (io.style.display === 'none') { io.style.display = 'block'; io.focus(); return; }
+      try { const o = JSON.parse(io.value); appearance = Object.assign(defaultAppearance(), o); applyAppearance(); renderAdmin(); saveAppearance(); adminSnapshot = JSON.stringify(appearance); log('🎨 Look imported + saved.'); }
+      catch (err) { log('Import failed: ' + err.message, 'err'); } });
+  }
+
+  /* =================================================================
      BOOT
      ================================================================= */
   function boot() {
     loadRoster();
     loadControls();
+    loadAppearance();
+    wireAdmin();
     buildShiftLights();
     renderGrid();
     enumerateVideo();
