@@ -141,6 +141,28 @@
 
     .sidebar { display: flex; flex-direction: column; gap: 20px; }
 
+    /* ---------- Tabbed sidebar (cuts the long scroll) ----------
+       Panels are grouped into Drive / Setup / Race panes; only the active
+       pane shows, so you never scroll past a dozen stacked panels. The
+       whole sidebar is sticky + self-scrolling so the FPV stays in view. */
+    .side-tabs {
+      display: none; gap: 6px; margin-bottom: 2px;
+      position: sticky; top: 0; z-index: 6; background: var(--bg-0); padding-bottom: 6px;
+    }
+    :root[data-sidebar="tabs"] .side-tabs { display: flex; }
+    .side-tabs button {
+      flex: 1; padding: 9px 4px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700;
+    }
+    .side-tabs button.active { border-color: var(--neon-cyan); color: var(--neon-cyan); background: var(--bg-2); }
+    .side-pane { display: flex; flex-direction: column; gap: 20px; }
+    :root[data-sidebar="tabs"] .side-pane { display: none; }
+    :root[data-sidebar="tabs"] .side-pane.active { display: flex; }
+    @media (min-width: 981px) {
+      .sidebar { position: sticky; top: 20px; align-self: start; max-height: calc(100vh - 40px); overflow-y: auto; padding-right: 4px; }
+      .sidebar::-webkit-scrollbar { width: 8px; }
+      .sidebar::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 8px; }
+    }
+
     /* ---------- Buttons ---------- */
     button {
       font-family: var(--font); cursor: pointer;
@@ -1240,6 +1262,11 @@
           <div class="btn-row" id="adLayout">
             <button data-layout="standard">Standard</button>
             <button data-layout="driver">Driver (full-bleed)</button>
+          </div>
+          <label style="font-size:11px;color:var(--text-dim);margin-top:8px;display:block;">Sidebar</label>
+          <div class="btn-row" id="adSidebar">
+            <button data-sidebar="tabs">Tabs (less scroll)</button>
+            <button data-sidebar="list">Single list</button>
           </div>
         </div>
         <div class="field"><label>Effects</label>
@@ -4273,7 +4300,41 @@
 
   function defaultAppearance() {
     return { preset:'arcade', tokens:{}, ui:100, hud:100, radius:null, glow:null,
-             layout:null, scanlines:null, wash:true, features:{} };
+             layout:null, scanlines:null, wash:true, sidebar:'tabs', features:{} };
+  }
+
+  // Group the long sidebar into Drive / Setup / Race tabs so only a short set
+  // of panels shows at once. Panels are MOVED (listeners preserved) into panes
+  // keyed by their heading text. The garage grid lives in the stage, untouched.
+  const SIDEBAR_GROUPS = [
+    ['Drive', ['Safety', 'Drivetrain', 'Steering Tuning']],
+    ['Setup', ['USB Transmitter', 'Racing Wheel', 'FPV Video']],
+    ['Race',  ['Race Timer', 'Leaderboard', 'Session Log', 'Telemetry Log']],
+  ];
+  function buildSidebarTabs() {
+    const sb = document.querySelector('.sidebar');
+    if (!sb || sb.dataset.tabbed) return;
+    const tabs = document.createElement('div'); tabs.className = 'side-tabs';
+    const panes = [];
+    SIDEBAR_GROUPS.forEach(([name, labels], i) => {
+      const pane = document.createElement('div');
+      pane.className = 'side-pane' + (i === 0 ? ' active' : '');
+      pane.dataset.pane = name;
+      labels.forEach((lb) => { const p = panelByLabel(lb); if (p) pane.appendChild(p); });
+      sb.appendChild(pane); panes.push(pane);
+      const btn = document.createElement('button');
+      btn.textContent = name; btn.dataset.tab = name; if (i === 0) btn.classList.add('active');
+      btn.addEventListener('click', () => {
+        tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+        panes.forEach((pp) => pp.classList.toggle('active', pp.dataset.pane === name));
+        try { localStorage.setItem('rcarcade.sidetab', name); } catch (_) {}
+      });
+      tabs.appendChild(btn);
+    });
+    sb.insertBefore(tabs, sb.firstChild);
+    sb.dataset.tabbed = '1';
+    try { const last = localStorage.getItem('rcarcade.sidetab');
+      if (last) { const b = [...tabs.querySelectorAll('button')].find((x) => x.dataset.tab === last); if (b) b.click(); } } catch (_) {}
   }
   let appearance = defaultAppearance();
   let adminSnapshot = null;
@@ -4308,6 +4369,7 @@
     for (const [k, v] of Object.entries(tokens)) root.style.setProperty(k, v);
     root.setAttribute('data-flat', preset.flat ? '1' : '0');
     root.setAttribute('data-layout', appearance.layout || preset.layout || 'standard');
+    root.setAttribute('data-sidebar', appearance.sidebar || 'tabs');
     const scan = appearance.scanlines == null ? preset.scanlines : appearance.scanlines;
     document.body.setAttribute('data-fx-scanlines', scan ? '1' : '0');
     if (appearance.wash === false) { root.style.setProperty('--bg-glow-1', 'transparent'); root.style.setProperty('--bg-glow-2', 'transparent'); }
@@ -4345,6 +4407,8 @@
     $('adminPreset').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.preset === preset));
     const layout = appearance.layout || THEME_PRESETS[preset].layout;
     $('adLayout').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.layout === layout));
+    const sbMode = appearance.sidebar || 'tabs';
+    $('adSidebar').querySelectorAll('button').forEach((b) => b.classList.toggle('primary', b.dataset.sidebar === sbMode));
     $('adScan').checked = appearance.scanlines == null ? THEME_PRESETS[preset].scanlines : appearance.scanlines;
     $('adWash').checked = appearance.wash !== false;
     const f = appearance.features || {};
@@ -4362,6 +4426,7 @@
     $('adminOverlay').addEventListener('click', (e) => { if (e.target === $('adminOverlay')) closeAdmin(true); });
     $('adminPreset').addEventListener('click', (e) => { const b = e.target.closest('button[data-preset]'); if (b) selectPreset(b.dataset.preset); });
     $('adLayout').addEventListener('click', (e) => { const b = e.target.closest('button[data-layout]'); if (b) { appearance.layout = b.dataset.layout; applyAppearance(); renderAdmin(); } });
+    $('adSidebar').addEventListener('click', (e) => { const b = e.target.closest('button[data-sidebar]'); if (b) { appearance.sidebar = b.dataset.sidebar; applyAppearance(); renderAdmin(); } });
     $('adAccent').addEventListener('input',  (e) => setToken('--neon-cyan', e.target.value));
     $('adAccent2').addEventListener('input', (e) => { setToken('--neon-magenta', e.target.value); setToken('--stroke', e.target.value + '55'); });
     $('adBg').addEventListener('input',      (e) => { setToken('--bg-0', e.target.value); setToken('--bg-1', e.target.value); });
@@ -4387,6 +4452,7 @@
   function boot() {
     loadRoster();
     loadControls();
+    buildSidebarTabs();
     loadAppearance();
     wireAdmin();
     buildShiftLights();
