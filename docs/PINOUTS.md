@@ -79,6 +79,53 @@ ADC1 = GPIO 0–4. Only ~6 LEDC channels — plenty for servo + ESC (+ a few lig
 
 ---
 
+## Seeed Studio XIAO ESP32C3 (pads are labelled D0–D10, not GPIO)
+
+The XIAO ESP32C3 is a C3, so the **generic C3 pin map above works unchanged** —
+select board **"XIAO_ESP32C3"** and flash. You just wire by the board's **D-label**
+silkscreen, which doesn't match the GPIO numbers. Translation:
+
+| Pad | GPIO | | Pad | GPIO |
+|---|---|---|---|---|
+| **D0** | 2 (ADC, strapping) | | **D6** | 21 (TX) |
+| **D1** | 3 (ADC) | | **D7** | 20 (RX) |
+| **D2** | 4 (ADC) | | **D8** | 8 (strapping) |
+| **D3** | 5 | | **D9** | 9 (strapping / BOOT) |
+| **D4** | 6 | | **D10** | 10 |
+| **D5** | 7 | | | |
+
+So the sketch's C3 defaults land on these pads:
+
+| Toy-grade | GPIO → Pad | | Hobby-grade | GPIO → Pad |
+|---|---|---|---|---|
+| AIN1 | 3 → **D1** | | Steer | 3 → **D1** |
+| AIN2 | 4 → **D2** | | ESC | 4 → **D2** |
+| PWMA | 5 → **D3** | | Headlight | 5 → **D3** |
+| BIN1 | 6 → **D4** | | Brake | 6 → **D4** |
+| BIN2 | 7 → **D5** | | Signal L | 7 → **D5** |
+| PWMB | 10 → **D10** | | Signal R | 10 → **D10** |
+| STBY | 20 → **D7** | | Reverse | 20 → **D7** |
+| | | | Horn | 21 → **D6** |
+
+**Three XIAO gotchas:**
+
+1. **Attach the external antenna.** The XIAO C3 ships with a U.FL antenna that
+   **must be plugged in** — without it, ESP-NOW range is nearly zero (fine on the
+   bench, useless on a moving car).
+2. **No USB driver needed** — the XIAO C3 uses the ESP32-C3's **native USB**, not a
+   CP210x/CH340 bridge. It just enumerates as a COM port. (GPIO 20/21 are therefore
+   free for I/O, as used above.)
+3. **Battery sense pin isn't broken out.** The sketch's `PIN_BATTERY` is GPIO0,
+   which the XIAO doesn't expose. It's disabled by default (harmless). To use it,
+   set `PIN_BATTERY` to **D1 (GPIO3)** or **D2 (GPIO4)** — ADC1 pads — and
+   `BATTERY_ENABLED = true`. Avoid **D8/D9** for outputs (strapping).
+
+**Power:** the XIAO C3 has an onboard LiPo charger (B+/B– pads underneath) so it can
+run straight off a small 3.7 V LiPo, or take **5 V on the 5V pin** from a BEC. Common
+ground with the H-bridge; motors always go through the H-bridge, never the pads.
+
+---
+
 ## The two fleet-wide rules (all boards)
 
 Mixed board **types** work together fine — a C3 mini car and a classic ESP32 car
