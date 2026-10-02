@@ -69,8 +69,23 @@
     /* ---- Layout: Minimal Driver (full-bleed FPV, chrome recedes) ---- */
     :root[data-layout="driver"] .sidebar { display: none; }
     :root[data-layout="driver"] main { grid-template-columns: 1fr; padding: 10px; }
-    :root[data-layout="driver"] header { padding: 8px 16px; }
-    :root[data-layout="driver"] .viewport { max-height: calc(100vh - 90px); }
+    :root[data-layout="driver"] header { display: none; }
+    :root[data-layout="driver"] .viewport { max-height: calc(100vh - 86px); }
+
+    /* Driver command bar — the self-contained control strip for Minimal Driver:
+       car select + ARM + gear + STOP + settings/theme, so the full-bleed view
+       needs no sidebar. Hidden in every other layout. */
+    .driver-bar {
+      display: none; align-items: center; gap: 10px; padding: 8px 14px;
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--stroke);
+    }
+    :root[data-layout="driver"] .driver-bar { display: flex; }
+    .driver-bar select { max-width: 220px; padding: 7px 10px; font-size: 12px; }
+    .driver-bar button { padding: 7px 12px; font-size: 12px; }
+    .driver-bar .driver-gear { font-weight: 800; font-size: 18px; min-width: 30px; text-align: center; color: var(--neon-lime); }
+    .driver-bar .driver-spacer { flex: 1; }
 
     /* ---- Optional FX: CRT scanlines (Arcade) ---- */
     body[data-fx-scanlines="1"]::after {
@@ -598,6 +613,17 @@
       <button class="chip" id="btnAdmin" title="Appearance & Admin (theme, sizes, feature toggles)" style="cursor:pointer;">🎨 Theme</button>
     </div>
   </header>
+
+  <!-- Minimal Driver command bar (shown only in the Driver layout) -->
+  <div class="driver-bar" id="driverBar">
+    <select id="driverCar" title="Select car"></select>
+    <button id="driverArm" class="arm">⏻ ARM</button>
+    <span class="driver-gear" id="driverGear" title="Gear">D</span>
+    <button id="driverStop" class="estop">■ STOP</button>
+    <span class="driver-spacer"></span>
+    <button id="driverSettings" title="Quick settings">⚙</button>
+    <button id="driverTheme" title="Theme & admin">🎨</button>
+  </div>
 
   <main>
     <!-- ============ SIDEBAR: connection panels ============ -->
@@ -1907,6 +1933,7 @@
     add.innerHTML = '<div class="plus">＋</div><div>Register Car</div>';
     add.addEventListener('click', () => openCarModal(null));
     grid.appendChild(add);
+    syncDriverBar();
   }
 
   function selectVehicle(id) {
@@ -2409,6 +2436,7 @@
     gEl.textContent = gnum;
     gEl.style.color = state.reverse ? 'var(--neon-amber)'
       : (manual && state.rpm >= REDLINE ? 'var(--bad)' : 'var(--neon-lime)');
+    const dg = $('driverGear'); if (dg) { dg.textContent = gnum; dg.style.color = gEl.style.color; }
 
     const caption = manual
       ? (state.reverse ? 'REVERSE' : activeGearCaps()[state.gear - 1] + '% CAP') + ' · ' + state.controls.powerLimit + '% PWR'
@@ -3264,6 +3292,7 @@
     $('hudArm').textContent = st;
     $('hudArm').style.color = state.estop ? 'var(--bad)' : state.armed ? 'var(--ok)' : 'var(--text-dim)';
     syncTouchButtons();
+    syncDriverBar();
   }
 
   /* =================================================================
@@ -4381,6 +4410,25 @@
     document.querySelectorAll('.status-chips .chip').forEach((c) => { if (c.id !== 'btnAdmin') c.classList.toggle('appearance-off', f['ui.chips'] === false); });
   }
 
+  // Minimal Driver command bar — keeps the full-bleed view self-contained.
+  function syncDriverBar() {
+    const sel = $('driverCar'); if (!sel) return;
+    const cur = state.selectedId || '';
+    sel.innerHTML = ['<option value="">— select car —</option>']
+      .concat(state.vehicles.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`)).join('');
+    sel.value = cur;
+    const arm = $('driverArm');
+    if (arm) { arm.textContent = state.armed ? '⏻ DISARM' : '⏻ ARM'; arm.classList.toggle('armed', state.armed); }
+  }
+  function wireDriverBar() {
+    $('driverCar').addEventListener('change', (e) => { if (e.target.value) selectVehicle(e.target.value); });
+    $('driverArm').addEventListener('click', () => { if (state.estop) setArmed(true); else setArmed(!state.armed); });
+    $('driverStop').addEventListener('click', eStop);
+    $('driverSettings').addEventListener('click', toggleQuickSettings);
+    $('driverTheme').addEventListener('click', openAdmin);
+    syncDriverBar();
+  }
+
   function openAdmin() { adminSnapshot = JSON.stringify(appearance); $('adminOverlay').classList.add('open'); renderAdmin(); }
   function closeAdmin(revert) {
     if (revert && adminSnapshot) { try { appearance = JSON.parse(adminSnapshot); } catch (_) {} applyAppearance(); }
@@ -4455,6 +4503,7 @@
     buildSidebarTabs();
     loadAppearance();
     wireAdmin();
+    wireDriverBar();
     buildShiftLights();
     renderGrid();
     enumerateVideo();
