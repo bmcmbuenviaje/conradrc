@@ -386,27 +386,57 @@ See the [wiring diagrams](#-chassis-compatibility) above for both hobby-grade an
 
 ## 🎮 Using the arcade
 
+### 🧭 The interface (Console layout)
+
+A fresh install opens in the **Console** layout with the **Paddock** theme:
+
+| Area | What it holds |
+|---|---|
+| **Top bar** | Car switcher, three status chips (controller · transmitter · camera — click one to fix it), **ARM** and **STOP**. Always visible. |
+| **Rail** (left; bottom tab bar on phones) | **Drive · Garage · Tune · Race · Setup**, plus **Look**. Click the open section again to collapse the panel. |
+| **Camera view** | FPV feed, HUD, on-screen STOP, snapshot, fullscreen, Quick Settings. A **"Before you drive"** checklist shows what is still missing; each row jumps to the control that fixes it. |
+| **Section panel** (right) | The selected section's controls. |
+
+Where the panels went:
+
+| Section | Contents |
+|---|---|
+| **Drive** | Max power, transmission, reverse, gearbox, lights, engine sound |
+| **Garage** | Vehicle grid, register / edit, import / export, fleet dashboard |
+| **Tune** | Steering tuning · Throttle (floor, expo) · *Set once* (wheel range, force feedback, ESC calibration) |
+| **Race** | Race timer, leaderboard, session log |
+| **Setup** | USB transmitter, racing wheel, FPV video, remote session, touch & gyro, HUD, hotkeys, telemetry log |
+
+**Prefer the old look?** **Look → Look** tab lists every theme (**Paddock**, **Sim Cockpit**, **Neon Arcade**, **Minimal Driver**); **Look → Layout** switches between **Console**, **Standard** (sidebar) and **Driver** (full-bleed). Any theme works with any layout. Press **Save look** to keep it. A look you saved before this layout existed is left exactly as it was.
+
+All layouts share one set of controls — the layout engine moves the same panels between regions — so every setting, hotkey and saved value behaves identically whichever look you use.
+
+### First drive
+
+The steps below name the Console sections; in the Standard layout the same panels are in the sidebar tabs.
+
 1. Open the GitHub Pages URL in **Chrome/Edge**. (The transmitter auto-reconnects if you've granted it before.)
-2. **USB Transmitter panel → Connect.** A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
-3. **Racing Wheel panel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **🎮 Test & Map Controls**.
-4. **FPV Video panel:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **⛶ Fullscreen** (HUD scales with it), **📷** to save a still, and the red **■ STOP** for a panic kill.
-5. **Select Your Vehicle:** click a car in the grid. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
-6. **Drivetrain panel:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
-7. **⏻ ARM** (Safety panel) — the car will not move until armed, and the throttle must be at rest to arm.
+2. **Setup → USB Transmitter → Connect** (or click the Transmitter chip / checklist row). A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
+3. **Setup → Racing Wheel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **Test & Map Controls**.
+4. **Setup → FPV Video:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **Fullscreen** (HUD scales with it), the camera button to save a still, and the red **STOP** for a panic kill.
+5. **Garage:** click a car (or pick it in the top-bar switcher). This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
+6. **Drive:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
+7. **ARM** (top bar) — the car will not move until armed, and the throttle must be at rest to arm.
 8. **Drive.** Steering/throttle bars and the HUD (gear, RPM, latency, packet loss, battery, RSSI) update at 50 Hz.
 
 ### 🛑 Safety (read this)
 
 The car **only moves when ARMED**. This is deliberate:
 
-- **⏻ ARM / DISARM** — arming is refused unless the throttle is at rest, so a floored pedal can't launch the car on connect.
-- **■ STOP** (Safety panel, a big button on the video, or the **`Space`** key) — immediate E-STOP: motion halts and the car disarms. Re-arm to resume.
-- **Auto-disarm failsafe** — the app disarms and neutralizes if the browser tab loses focus, the window blurs, the controller disconnects, or the transmitter is unplugged.
-- `Enter` arms/disarms from the keyboard.
+- **ARM / DISARM** — arming is refused unless the throttle is at rest, so a floored pedal can't launch the car on connect. The check covers every input: wheel/pad, keyboard, the touch throttle, and a remote driver.
+- **STOP** (top bar / Safety panel, a big button on the video, or the **`Space`** key) — immediate E-STOP: motion halts and the car disarms. The E-STOP stays latched until an ARM actually succeeds — a refused ARM does not clear it.
+- **Auto-disarm failsafe** — the app disarms and neutralizes if the browser tab loses focus, the window blurs, the controller disconnects, the transmitter is unplugged, or a **remote driver** disconnects or goes quiet for more than 0.5 s.
+- `Enter` arms/disarms from the keyboard. `Space` is E-STOP everywhere outside a text field — including while a button has focus or a dialog is open.
+- **Keyboard focus:** `Enter` and `Tab` act on a control when one has keyboard focus (so you can Tab through the UI and press Enter on a button); with nothing focused they arm and open Quick Settings as before. A mouse click does not leave focus behind, so mouse users see no change.
 
 ### ⌨️ Keyboard driving (fallback)
 
-With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **`Space`** E-STOP, **`Enter`** arm.
+With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **C** garage / car switcher, **`Space`** E-STOP, **`Enter`** arm.
 
 ### ◄ Reverse control modes
 
@@ -419,7 +449,7 @@ In **Test & Map Controls** pick how reverse engages:
 
 ### 🐢 Rolling soft stop + progressive brake pedal
 
-Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop** (or flip **🐢 Coast** in the in-viewport Quick Settings drawer mid-session):
+Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop** (or flip **Coast** in the in-viewport Quick Settings drawer mid-session):
 
 - **Let off the throttle → the car rolls to a gentle stop** instead of snapping to a halt (engine braking is disabled — pure coast).
 - **Press the mapped Brake axis pedal → braking in proportion to pedal depth**, up to the **Brake pedal force** you set. Light press = gentle slow; full press = hard stop.
@@ -477,7 +507,7 @@ Wire an **IR break-beam lap gate** across the start/finish line (flash [`electro
 - **Optional ESP-NOW encryption** — set `ENABLE_CRYPTO=true` + matching PMK/LMK on the master and every car to authenticate + encrypt the DriveFrames. Presence broadcasts stay unencrypted by design.
 - **Long Range (LR) mode** — `ENABLE_LR_MODE=true` (default) puts ESP-NOW into its extended-range modulation. Typical gain: 1.5–3× range at the cost of ~5–10 ms extra latency. **Must be identical on the master and every car** — mixing LR and normal-mode ESP32s means they can't hear each other. Set to `false` on all sketches if you'd rather trade range for latency (e.g. for racing rather than crawling).
 - **Install / offline** — it's a PWA; install it for kiosk use and it runs offline (control needs the USB transmitter, of course).
-- **In-browser smoke tests** — open [test.html](test.html) to run ~40 assertions across the calibration/drivetrain/safety/telemetry paths in a hidden iframe. Green means "no regressions."
+- **In-browser smoke tests** — open [test.html](test.html) (served over http, e.g. `npx http-server`) to run ~120 assertions across the calibration/drivetrain/safety/telemetry paths, keyboard handling, and layout switching in a hidden iframe. Green means "no regressions."
 
 ### 🧪 Before your first drive
 
