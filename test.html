@@ -44,6 +44,10 @@ async function run() {
   if (!w.__rc) { document.getElementById('summary').textContent = 'App did not initialize (window.__rc missing)'; return; }
   const s = w.__rc.state;
   const ctx = { w, s, c: s.controls };
+  // The app shares this origin's localStorage. Snapshot it so the run can put
+  // back whatever roster / look the user had instead of wiping it.
+  const savedStorage = {};
+  try { for (let i = 0; i < w.localStorage.length; i++) { const k = w.localStorage.key(i); savedStorage[k] = w.localStorage.getItem(k); } } catch (_) {}
 
   // ---------- Calibration math ----------
   assert('axisToServo(0) = 90', eq(w.axisToServo(0), 90));
@@ -222,8 +226,128 @@ async function run() {
   assert('normalizeMac short = null', w.normalizeMac('aabbcc') === null);
   assert('normalizeMac non-hex = null', w.normalizeMac('zzzz') === null);
 
-  // Cleanup: wipe localStorage the iframe touched during the test.
-  try { w.localStorage.clear(); } catch (_) {}
+  // ---------- Safety: arming rules ----------
+  const resetSafety = () => { ctx.s.armed = false; ctx.s.estop = false; ctx.s.keys = {}; ctx.s.reverse = false; };
+  ctx.c.transmission = 'auto'; ctx.c.rest = 'neg'; ctx.c.deadzone = 5; ctx.s.padIndex = null; resetSafety();
+
+  // A refused ARM must leave an E-STOP latch in place.
+  w.setArmed(true); w.eStop();
+  ctx.s.keys = { w: true };                      // keyboard throttle held
+  w.setArmed(true);
+  assert('arm refused while keyboard throttle is held', !ctx.s.armed);
+  assert('refused arm keeps the E-STOP latch', ctx.s.estop === true);
+  ctx.s.keys = {};
+  w.setArmed(true);
+  assert('arm succeeds once the throttle is released, clearing E-STOP', ctx.s.armed && !ctx.s.estop);
+  resetSafety();
+
+  // Touch throttle counts for the throttle-at-rest check.
+  const touchWas = { active: ctx.s.touch.active, center: ctx.c.touchThrottleCenter };
+  ctx.s.touch.active = true; ctx.c.touchThrottleCenter = true; ctx.s.touch.throttleAxis = 0.8;
+  w.setArmed(true);
+  assert('arm refused while the touch throttle is held', !ctx.s.armed);
+  ctx.s.touch.throttleAxis = 0;
+  w.setArmed(true);
+  assert('arm succeeds with the touch throttle centred', ctx.s.armed);
+  ctx.s.touch.active = touchWas.active; ctx.c.touchThrottleCenter = touchWas.center; resetSafety();
+
+  // Remote driver: held throttle blocks arming, and stale input disarms.
+  ctx.s.remote.mode = 'host'; ctx.s.remote.connected = true;
+  w.handleRemoteMessage({ type: 'input', steer: 0, throttle: 1, rest: 'zero' });
+  assert('fresh remote input is used', !!w.readRemote() && w.readRemote().throttleAxis === 1);
+  w.setArmed(true);
+  assert('arm refused while the remote throttle is held', !ctx.s.armed);
+  w.handleRemoteMessage({ type: 'input', steer: 0, throttle: 0, rest: 'zero' });
+  w.setArmed(true);
+  assert('arm succeeds with the remote throttle at rest', ctx.s.armed);
+  ctx.s.remote.remoteInput.at = ctx.w.performance.now() - 2000;   // link stalled 2 s ago
+  assert('stale remote input is dropped', w.readRemote() === null);
+  assert('stale remote input disarms (failsafe)', !ctx.s.armed);
+  ctx.s.remote.mode = null; ctx.s.remote.connected = false; ctx.s.remote.remoteInput = null; resetSafety();
+
+  // Escape must not transmit anything unless the ESC calibration helper is open.
+  const sent = [];
+  const dec = new TextDecoder();
+  ctx.s.writer = { write: async (bytes) => { sent.push(dec.decode(bytes)); } };
+  ctx.s.selectedId = ctx.s.vehicles[0].id;
+  const esc = () => w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  const calFrames = () => sent.filter((p) => p === 'DRIVE,90,0\n').length;   // raw 2-field frame = calibration helper
+  esc();
+  assert('Escape with no dialog open sends no raw frame', calFrames() === 0);
+  w.openCalModal(); esc();
+  assert('closing the ESC helper with Escape sends one neutral frame', calFrames() === 1);
+  assert('Escape closed the ESC helper', !w.document.getElementById('calOverlay').classList.contains('open'));
+  w.openAdmin(); esc();
+  assert('Escape closes the Appearance panel', !w.document.getElementById('adminOverlay').classList.contains('open'));
+  ctx.s.writer = null; ctx.s.selectedId = null;
+
+  // ---------- Keyboard: hotkeys yield to a focused control, E-STOP never does ----------
+  const key = (target, k) => target.dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  const someButton = w.document.getElementById('btnTestControls');
+  resetSafety();
+  key(someButton, 'Enter');
+  assert('Enter on a focused button does not arm', !ctx.s.armed);
+  key(w.document.body, 'Enter');
+  assert('Enter with nothing focused arms', ctx.s.armed);
+  key(someButton, ' ');
+  assert('Space on a focused button is still E-STOP', ctx.s.estop && !ctx.s.armed);
+  resetSafety(); w.updateSafetyUI();
+
+  // ---------- Layout engine ----------
+  const d = w.document;
+  const lookWas = JSON.stringify(RC.appearance);
+  assert('new installs default to the ' + RC.DEFAULT_PRESET + ' theme', w.defaultAppearance().preset === RC.DEFAULT_PRESET && RC.THEME_PRESETS[RC.DEFAULT_PRESET].layout === 'console');
+  const idList = () => [...d.querySelectorAll('[id]')].map((e) => e.id).sort().join(',');
+  const sidebarOrder = () => [...d.querySelectorAll('.sidebar [id]')].map((e) => e.id).join(',');
+  const panelOf = (k) => d.querySelector('.panel[data-panel="' + k + '"]');
+
+  RC.appearance = { preset: 'arcade' };
+  const classicIds = idList(), classicOrder = sidebarOrder();
+  assert('classic: layout engine leaves every panel at home', RC.layoutKind === 'classic' && d.documentElement.dataset.layout === 'standard');
+  assert('classic: garage panel sits in the stage', panelOf('garage').parentElement.classList.contains('stage'));
+  assert('classic: drivetrain groups keep their order',
+    [...panelOf('drivetrain').querySelectorAll('[data-move]')].map((x) => x.dataset.move).join() === 'dt-core,dt-throttle,dt-sound,dt-cal');
+
+  RC.appearance = { preset: 'paddock' };
+  assert('console: theme switches skin + layout', d.documentElement.dataset.skin === 'modern' && d.documentElement.dataset.layout === 'console' && RC.layoutKind === 'console');
+  assert('console: no element was lost or duplicated', idList() === classicIds);
+  assert('console: garage panel moved into the section panel', !!panelOf('garage').closest('#secPanel'));
+  assert('console: ARM/STOP bar and status chips moved into the top bar',
+    !!d.getElementById('driverArm').closest('#shellBar') && !!d.getElementById('chipSerial').closest('#shellBar'));
+  assert('console: lights group shown in the Drive section', !!d.getElementById('qsLightHead').closest('.sec[data-sec="drive"]'));
+  w.showSection('tune');
+  assert('showSection activates the section and the rail tab',
+    d.documentElement.dataset.sec === 'tune' && d.querySelector('.sec[data-sec="tune"]').classList.contains('active') &&
+    d.querySelector('#rail [data-sec="tune"]').getAttribute('aria-selected') === 'true');
+  w.showSection('drive');
+
+  RC.appearance = { preset: 'paddock', features: { 'panel.drivetrain': false } };
+  assert('feature toggle hides a panel\'s groups wherever the layout put them', d.querySelector('[data-move="dt-core"]').classList.contains('appearance-off'));
+
+  RC.appearance = { preset: 'cockpit' };
+  assert('back to classic: same elements', idList() === classicIds);
+  assert('back to classic: sidebar order restored exactly', sidebarOrder() === classicOrder);
+  assert('back to classic: garage panel back in the stage', panelOf('garage').parentElement.classList.contains('stage'));
+  assert('back to classic: lights group back in the quick-settings drawer', !!d.getElementById('qsLightHead').closest('#qsDrawer'));
+  assert('back to classic: command bar out of the top bar', !d.getElementById('driverArm').closest('#shellBar'));
+
+  RC.appearance = { preset: 'paddock' }; RC.appearance = { preset: 'minimal' };
+  assert('second round trip is still exact', sidebarOrder() === classicOrder && d.documentElement.dataset.layout === 'driver');
+
+  RC.appearance = { preset: 'arcade', layout: 'console' };
+  assert('a classic theme can use the Console layout', d.documentElement.dataset.skin === 'classic' && RC.layoutKind === 'console');
+  RC.appearance = { preset: 'no-such-theme', layout: 'no-such-layout' };
+  assert('unknown theme / layout fall back to the default', RC.appearance.preset === RC.DEFAULT_PRESET && RC.appearance.layout === null);
+
+  // HUD painter: change-detected writes still land.
+  w.paintHud(120, -40);
+  assert('paintHud writes steering + throttle', d.getElementById('hudSteer').textContent === '120°' && d.getElementById('throttleVal').textContent === '-40');
+  w.paintHud(90, 0);
+
+  RC.appearance = JSON.parse(lookWas);
+
+  // Cleanup: put localStorage back the way it was before the run.
+  try { w.localStorage.clear(); for (const [k, v] of Object.entries(savedStorage)) w.localStorage.setItem(k, v); } catch (_) {}
 
   const summary = document.getElementById('summary');
   summary.textContent = `${pass} passed · ${fail} failed`;
