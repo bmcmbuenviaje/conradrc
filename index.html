@@ -791,6 +791,26 @@
     .qs-drawer { visibility: hidden; transition: transform 0.22s ease, opacity 0.22s ease, visibility 0s linear 0.22s; }
     .qs-drawer.open { visibility: visible; transition: transform 0.22s ease, opacity 0.22s ease; }
 
+    /* Car switcher (Driver bar / Console top bar): themed like the buttons beside it
+       instead of the browser's default white control. */
+    :root { color-scheme: dark; }
+    .driver-bar select {
+      appearance: none; -webkit-appearance: none;
+      font-family: var(--font); font-weight: 600; color: var(--text);
+      text-transform: uppercase; letter-spacing: 1.4px;
+      border: 1px solid var(--stroke); border-radius: calc(var(--radius) - 4px);
+      background-color: var(--bg-2);
+      background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%), linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+      background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+      background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+      padding-right: 28px; cursor: pointer; transition: border-color 0.15s ease;
+    }
+    .driver-bar select:hover { border-color: var(--c-accent); }
+    select option { background: var(--bg-1); color: var(--text); text-transform: none; letter-spacing: 0; }
+    :root[data-skin="modern"] .driver-bar select { text-transform: none; letter-spacing: 0; border-radius: 10px; }
+    :root[data-skin="modern"] .driver-bar select:hover { border-color: rgba(var(--accent-rgb), 0.7); }
+    .shell-bar #driverCar { padding-right: 28px; }
+
     /* Keyboard focus is always visible. */
     :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
     input[type=range]:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 4px; }
