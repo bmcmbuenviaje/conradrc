@@ -781,8 +781,8 @@ Field-by-field notes:
 - **`gearCaps` is per-car and independent of the global curve.** Use it to give a crawler short low gears, a rally car taller gears, etc. All 6 values required if present.
 - **Rosters exported from the app** always include `tune`, `stats`, and normalized MAC. You can hand-edit and re-import.
 
+**Optional `photo`:** a car may carry a `photo` field — a `data:image/png|jpeg|webp;base64,…` URL written by the car editor (resized to 360 px on its longest side). It is shown instead of `sprite`. Anything that is not such a data URL, or is larger than 600 000 characters, is dropped on import.
+
 ---
 
 *Built for zero-perceptible-latency (&lt;20 ms) local RC sim racing. Static build · Web Serial 115200 · ESP-NOW mesh.*
-
-**Optional `photo`:** a car may carry a `photo` field — a `data:image/png|jpeg|webp;base64,…` URL written by the car editor (resized to 360 px on its longest side). It is shown instead of `sprite`. Anything that is not such a data URL, or is larger than 600 000 characters, is dropped on import.
