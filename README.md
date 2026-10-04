@@ -19,7 +19,9 @@ The whole control chain is browser → USB → radio → car:
 
 ### ✨ Features
 
-- **Visual lobby** — register/edit/delete cars in-app (MAC, icon, color, stats), Import/Export roster JSON.
+- **Console interface** — top bar with car picker, status chips, **ARM** and **STOP**; a section rail (**Drive · Garage · Tune · Race · Setup**); and a "Before you drive" checklist that shows what is still missing. Works on a phone (bottom tab bar, 44 px touch targets).
+- **Themes and layouts** — four themes (**Paddock**, Sim Cockpit, Neon Arcade, Minimal Driver) × three layouts (**Console**, Standard, Driver). Mix freely, tune colours/sizes, toggle panels, and export the look as JSON.
+- **Visual lobby** — register/edit/delete cars in-app (MAC, icon or **photo**, color, stats), Import/Export roster JSON.
 - **Zero-latency control** — 50 Hz Gamepad polling, lean serial packets, ESP-NOW; live latency + packet-loss readout.
 - **Any input** — racing wheel/pad, **keyboard**, **phone touch** (centered up=fwd/down=rev stick or gyro tilt), or a **remote phone over the internet** (WebRTC) driving a PC station.
 - **Drivetrain** — max-power cap, forward/reverse, 6-speed **manual gearbox** with a **10/20/40/60/80/100 %** per-gear curve, racing **RPM shift-lights**, and **simulated engine braking** (tunable strength).
@@ -386,27 +388,59 @@ See the [wiring diagrams](#-chassis-compatibility) above for both hobby-grade an
 
 ## 🎮 Using the arcade
 
+### 🧭 The interface (Console layout)
+
+A fresh install opens in the **Console** layout with the **Paddock** theme:
+
+| Area | What it holds |
+|---|---|
+| **Top bar** | Car picker (photo or icon, name, MAC tail, and **Release car**), three status chips (controller · transmitter · camera — click one to fix it), **ARM** and **STOP**. Always visible. |
+| **Rail** (left; bottom tab bar on phones) | **Drive · Garage · Tune · Race · Setup**, plus **Look**. Click the open section again to collapse the panel. |
+| **Camera view** | FPV feed, HUD, on-screen STOP, snapshot, fullscreen, Quick Settings. A **"Before you drive"** checklist shows what is still missing; each row jumps to the control that fixes it. |
+| **Section panel** (right) | The selected section's controls. |
+
+Where the panels went:
+
+| Section | Contents |
+|---|---|
+| **Drive** | Max power, transmission, reverse, gearbox, lights, engine sound |
+| **Garage** | Vehicle grid, register / edit, import / export, fleet dashboard |
+| **Tune** | Steering tuning · Throttle (floor, expo) · *Set once* (wheel range, force feedback, ESC calibration) |
+| **Race** | Race timer, leaderboard, session log |
+| **Setup** | USB transmitter, racing wheel, FPV video, remote session, touch & gyro, HUD, hotkeys, telemetry log |
+
+**Prefer the old look?** **Look → Look** tab lists every theme (**Paddock**, **Sim Cockpit**, **Neon Arcade**, **Minimal Driver**); **Look → Layout** switches between **Console**, **Standard** (sidebar) and **Driver** (full-bleed). Any theme works with any layout. Press **Save look** to keep it. A look you saved before this layout existed is left exactly as it was.
+
+**Adding your own:** themes live in `THEME_PRESETS` and layouts in `LAYOUTS` in [`index.html`](index.html) — add an entry and the **Look** panel lists it. A theme is a set of colour/shape tokens plus a starting layout; a layout is CSS under `:root[data-layout="…"]` and, if it rearranges panels, a placement table like `CONSOLE_PLACEMENT`.
+
+All layouts share one set of controls — the layout engine moves the same panels between regions — so every setting, hotkey and saved value behaves identically whichever look you use.
+
+### First drive
+
+The steps below name the Console sections; in the Standard layout the same panels are in the sidebar tabs.
+
 1. Open the GitHub Pages URL in **Chrome/Edge**. (The transmitter auto-reconnects if you've granted it before.)
-2. **USB Transmitter panel → Connect.** A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
-3. **Racing Wheel panel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **🎮 Test & Map Controls**.
-4. **FPV Video panel:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **⛶ Fullscreen** (HUD scales with it), **📷** to save a still, and the red **■ STOP** for a panic kill.
-5. **Select Your Vehicle:** click a car in the grid. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
-6. **Drivetrain panel:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
-7. **⏻ ARM** (Safety panel) — the car will not move until armed, and the throttle must be at rest to arm.
+2. **Setup → USB Transmitter → Connect** (or click the Transmitter chip / checklist row). A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
+3. **Setup → Racing Wheel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **Test & Map Controls**.
+4. **Setup → FPV Video:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **Fullscreen** (HUD scales with it), the camera button to save a still, and the red **STOP** for a panic kill.
+5. **Garage:** click a car (or pick it in the top-bar car picker). To tell cars apart at a glance, edit a car and add a **photo** (PNG with a transparent background, or JPG) — it replaces the emoji icon on the card, in the quick garage and in the fleet dashboard, and travels with roster Export / Import. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
+6. **Drive:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
+7. **ARM** (top bar) — the car will not move until armed, and the throttle must be at rest to arm.
 8. **Drive.** Steering/throttle bars and the HUD (gear, RPM, latency, packet loss, battery, RSSI) update at 50 Hz.
 
 ### 🛑 Safety (read this)
 
 The car **only moves when ARMED**. This is deliberate:
 
-- **⏻ ARM / DISARM** — arming is refused unless the throttle is at rest, so a floored pedal can't launch the car on connect.
-- **■ STOP** (Safety panel, a big button on the video, or the **`Space`** key) — immediate E-STOP: motion halts and the car disarms. Re-arm to resume.
-- **Auto-disarm failsafe** — the app disarms and neutralizes if the browser tab loses focus, the window blurs, the controller disconnects, or the transmitter is unplugged.
-- `Enter` arms/disarms from the keyboard.
+- **ARM / DISARM** — arming is refused unless the throttle is at rest, so a floored pedal can't launch the car on connect. The check covers every input: wheel/pad, keyboard, the touch throttle, and a remote driver.
+- **STOP** (top bar / Safety panel, a big button on the video, or the **`Space`** key) — immediate E-STOP: motion halts and the car disarms. The E-STOP stays latched until an ARM actually succeeds — a refused ARM does not clear it.
+- **Auto-disarm failsafe** — the app disarms and neutralizes if the browser tab loses focus, the window blurs, the controller disconnects, the transmitter is unplugged, or a **remote driver** disconnects or goes quiet for more than 0.5 s.
+- `Enter` arms/disarms from the keyboard. `Space` is E-STOP everywhere outside a text field — including while a button has focus or a dialog is open.
+- **Keyboard focus:** `Enter` and `Tab` act on a control when one has keyboard focus (so you can Tab through the UI and press Enter on a button); with nothing focused they arm and open Quick Settings as before. A mouse click does not leave focus behind, so mouse users see no change.
 
 ### ⌨️ Keyboard driving (fallback)
 
-With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **`Space`** E-STOP, **`Enter`** arm.
+With no wheel bound, drive from the keyboard: **W / ↑** throttle, **A D / ← →** steer, **R** reverse, **Q / E** shift down/up, **C** garage / car switcher, **`Space`** E-STOP, **`Enter`** arm.
 
 ### ◄ Reverse control modes
 
@@ -419,7 +453,7 @@ In **Test & Map Controls** pick how reverse engages:
 
 ### 🐢 Rolling soft stop + progressive brake pedal
 
-Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop** (or flip **🐢 Coast** in the in-viewport Quick Settings drawer mid-session):
+Great for crawlers. In **Test & Map Controls**, tick **Rolling soft stop** (or flip **Coast** in the in-viewport Quick Settings drawer mid-session):
 
 - **Let off the throttle → the car rolls to a gentle stop** instead of snapping to a halt (engine braking is disabled — pure coast).
 - **Press the mapped Brake axis pedal → braking in proportion to pedal depth**, up to the **Brake pedal force** you set. Light press = gentle slow; full press = hard stop.
@@ -477,7 +511,7 @@ Wire an **IR break-beam lap gate** across the start/finish line (flash [`electro
 - **Optional ESP-NOW encryption** — set `ENABLE_CRYPTO=true` + matching PMK/LMK on the master and every car to authenticate + encrypt the DriveFrames. Presence broadcasts stay unencrypted by design.
 - **Long Range (LR) mode** — `ENABLE_LR_MODE=true` (default) puts ESP-NOW into its extended-range modulation. Typical gain: 1.5–3× range at the cost of ~5–10 ms extra latency. **Must be identical on the master and every car** — mixing LR and normal-mode ESP32s means they can't hear each other. Set to `false` on all sketches if you'd rather trade range for latency (e.g. for racing rather than crawling).
 - **Install / offline** — it's a PWA; install it for kiosk use and it runs offline (control needs the USB transmitter, of course).
-- **In-browser smoke tests** — open [test.html](test.html) to run ~40 assertions across the calibration/drivetrain/safety/telemetry paths in a hidden iframe. Green means "no regressions."
+- **In-browser smoke tests** — open [test.html](test.html) (served over http, e.g. `npx http-server`) to run ~120 assertions across the calibration/drivetrain/safety/telemetry paths, keyboard handling, and layout switching in a hidden iframe. Green means "no regressions."
 
 ### 🧪 Before your first drive
 
@@ -559,43 +593,60 @@ Different wheels/pads expose their steering and pedals on different axis indices
 
 ## 📡 Serial protocol reference
 
-All packets are lean, newline-terminated ASCII at **115200 baud**.
+All packets are lean, newline-terminated ASCII at **115200 baud**. The master accepts `\n` or `\r` as the line end; a line longer than 63 characters is rejected with `ERR,OVERFLOW`.
 
 ### Browser → Master transmitter
 | Packet | Meaning |
 |--------|---------|
-| `CAR,AA,BB,CC,DD,EE,FF\n` | Swap the active ESP-NOW peer to this MAC (six hex bytes). |
-| `DRIVE,<servo>,<motor>\n` | Steering `0–180`; motor **`-255…255`** (negative = reverse, `0` = stop). Already scaled by the power cap and gearbox. Sent only when a value changes. |
+| `CAR,AA,BB,CC,DD,EE,FF\n` | Swap the active ESP-NOW peer to this MAC (six hex bytes) and claim that car. |
+| `DRIVE,<servo>,<motor>,<lights>\n` | Steering `0–180`; motor **`-255…255`** (negative = reverse, `0` = stop), already scaled by the power cap and gearbox; `lights` is the bitfield below (`0–255`). Sent **every control tick (50 Hz)** while a car is selected — including neutral frames while disarmed — so the car's link-loss failsafe always has a heartbeat. The `lights` field is optional for the master (it defaults to `0`). |
+| `RELEASE\n` | Browser deselected the active car. The master clears its claim; the idle claim goes out with the **next** once-a-second presence beacon (not immediately). |
 
-### Master transmitter → Browser (telemetry, shown in the log)
+The ESC calibration helper sends raw two-field `DRIVE,90,<motor>` frames (no `lights`), bypassing arming.
+
+**Lights bitfield** (identical in the app and every receiver sketch):
+
+| Bit | Value | Light |
+|---|---|---|
+| 0 | `0x01` | Headlights |
+| 1 | `0x02` | High beam |
+| 2 | `0x04` | Left signal (receiver blinks it) |
+| 3 | `0x08` | Right signal (receiver blinks it) |
+| 4 | `0x10` | Brake light |
+| 5 | `0x20` | Reverse light |
+| 6 | `0x40` | Horn |
+| 7 | `0x80` | Aux (reserved) |
+
+Brake and reverse bits are set automatically by the app; the rest follow the light toggles. The toy-grade receiver accepts the byte but drives no light pins.
+
+### Master transmitter → Browser
 | Packet | Meaning |
 |--------|---------|
 | `READY,MASTER,<mac>` | Boot banner. |
 | `OK,CAR,<mac>` | Peer swap accepted. |
-| `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. |
+| `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. `<seq>` is the master's latest transmit counter. Presence broadcasts produce no `ACK`. |
 | `TELEM,<mv>,<rssi>,<failsafes>,<flags>` | Car telemetry relayed to the browser: **battery mV**, **RSSI**, **failsafe count** since car boot, and status flags (bit0 = brownout suspected). Drives the HUD + Fleet Dashboard. |
-| `CLAIM,<masterMac>,<carMac>` | Another master on the same 2.4 GHz channel is currently driving `carMac`. The grid shows ⚠ IN USE. `carMac = 00:00…` means idle/released. |
-| `ERR,<code>` | Parse/target error (`CAR_LEN`, `NO_TARGET`, `OVERFLOW`, …). |
+| `CLAIM,<masterMac>,<carMac>` | Another master on the same 2.4 GHz channel is currently driving `carMac`. The grid shows IN USE. `carMac = 00:00…` means idle/released. |
+| `LAP,<gate>,<seq>` | An IR lap gate reported a crossing: gate id `0–255` and that gate's rolling crossing counter. Drives the race timer + leaderboard. |
+| `ERR,<code>` | `CAR_BADBYTE`, `CAR_LEN`, `CAR_ADDPEER` (bad `CAR` line or peer add failed) · `DRIVE_LEN` (missing field) · `NO_TARGET` (`DRIVE` before any `CAR`) · `UNKNOWN` (unrecognised line) · `OVERFLOW` (line too long) · `LR_SET`, `ESPNOW_INIT` (radio setup failed at boot). |
 
-### Browser → Master (additional)
-| Packet | Meaning |
-|--------|---------|
-| `RELEASE\n` | Browser deselected the active car — master broadcasts idle claim so other cabinets can see the release. |
+`ACK`, `TELEM`, `CLAIM` and `LAP` are consumed silently by the app; everything else appears in the Telemetry Log.
 
 ### Over the air (Master → Car, binary)
-A packed `DriveFrame` struct — identical on both firmware files:
+A packed 8-byte `DriveFrame` struct — identical in the master and both receiver sketches:
 ```c
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
   int16_t  motor;   // -255..255 (negative = reverse, 0 = stop)
+  uint8_t  lights;  // bitfield — see the table above
   uint32_t seq;     // rolling sequence for diagnostics
 } DriveFrame;
 ```
 
-The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward).
+The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward). If no frame arrives for **500 ms** the receiver goes to neutral, centres the steering, shows brake lights, and counts a failsafe.
 
 ### Over the air (Car → Master, binary)
-The car learns the master's MAC from the first frame it receives, then sends back a packed `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
+The car learns the master's MAC from the first frame it receives, then sends back a packed 6-byte `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
 ```c
 typedef struct __attribute__((packed)) {
   uint16_t vbat_mv;   // battery millivolts (0 if unmeasured)
@@ -605,14 +656,27 @@ typedef struct __attribute__((packed)) {
 } TelemetryFrame;
 ```
 
-Masters also broadcast a `PresenceFrame` on `ff:ff:ff:ff:ff:ff` once a second (unencrypted so any master hears):
+### Broadcast frames
+Masters broadcast a 10-byte `PresenceFrame` on `ff:ff:ff:ff:ff:ff` once a second (unencrypted so any master hears):
 ```c
 typedef struct __attribute__((packed)) {
   char    tag[4]; // "CLM\0"
   uint8_t car[6]; // MAC of the car this master is driving (all zero = idle)
 } PresenceFrame;
 ```
-Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` (GPIO 34) with the right `BATTERY_DIVIDER` ratio. RSSI works with no extra wiring.
+
+An IR lap gate broadcasts a 9-byte `LapFrame` each time its beam breaks (1.5 s debounce at the gate); every master in range relays it as a `LAP` line:
+```c
+typedef struct __attribute__((packed)) {
+  char     tag[4]; // "LAP\0"
+  uint8_t  gate;   // gate id (0..255)
+  uint32_t seq;    // rolling crossing counter
+} LapFrame;
+```
+
+Receivers tell the frame types apart **by length** (8 / 6 / 10 / 9 bytes), so the sizes above are part of the protocol: flash the master, every car and the gate from the same commit.
+
+Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` with the right `BATTERY_DIVIDER` ratio. The pin depends on the chip: **GPIO 34** on a classic ESP32, **GPIO 1** on S2/S3, **GPIO 0** on C3/C6 (see [docs/PINOUTS.md](docs/PINOUTS.md)). RSSI works with no extra wiring.
 
 ---
 
@@ -746,6 +810,8 @@ Field-by-field notes:
 - **Deleting a field is fine** — every tune value falls back to what's currently in the app.
 - **`gearCaps` is per-car and independent of the global curve.** Use it to give a crawler short low gears, a rally car taller gears, etc. All 6 values required if present.
 - **Rosters exported from the app** always include `tune`, `stats`, and normalized MAC. You can hand-edit and re-import.
+
+**Optional `photo`:** a car may carry a `photo` field — a `data:image/png|jpeg|webp;base64,…` URL written by the car editor (resized to 360 px on its longest side). It is shown instead of `sprite`. Anything that is not such a data URL, or is larger than 600 000 characters, is dropped on import.
 
 ---
 
