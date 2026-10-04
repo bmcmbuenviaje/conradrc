@@ -197,6 +197,19 @@ async function run() {
   const badMac = w.parseRosterJson('[{"name":"X","mac":"zzz"}]');
   assert('parseRosterJson rejects invalid MAC', !!badMac.error);
 
+  // ---------- Car photos ----------
+  const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const withPhoto = w.parseRosterJson(JSON.stringify([{ name: 'PIC', mac: 'aa:bb:cc:00:00:01', photo: px }]));
+  assert('parseRosterJson keeps a valid car photo', withPhoto.cars && withPhoto.cars[0].photo === px);
+  const badPhoto = w.parseRosterJson(JSON.stringify([{ name: 'PIC', mac: 'aa:bb:cc:00:00:01', photo: 'javascript:alert(1)' }]));
+  assert('parseRosterJson drops a photo that is not a PNG/JPG/WebP data URL', badPhoto.cars && !('photo' in badPhoto.cars[0]));
+  const svgPhoto = w.parseRosterJson(JSON.stringify([{ name: 'PIC', mac: 'aa:bb:cc:00:00:01', photo: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }]));
+  assert('parseRosterJson drops an SVG photo', svgPhoto.cars && !('photo' in svgPhoto.cars[0]));
+  ctx.s.vehicles[0].photo = px; w.renderGrid();
+  assert('car card shows the photo instead of the icon', !!w.document.querySelector('#carGrid .car .sprite img.car-photo'));
+  delete ctx.s.vehicles[0].photo; w.renderGrid();
+  assert('car card falls back to the icon without a photo', !w.document.querySelector('#carGrid .car .sprite img'));
+
   // ---------- Per-car tune apply ----------
   const v = ctx.s.vehicles[0];
   v.tune = { powerLimit:40, transmission:'manual', engBrake:120, trim:5, epa:80, expo:-25, deadzone:8, invertSteer:true };

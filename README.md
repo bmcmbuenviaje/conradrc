@@ -419,7 +419,7 @@ The steps below name the Console sections; in the Standard layout the same panel
 2. **Setup → USB Transmitter → Connect** (or click the Transmitter chip / checklist row). A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
 3. **Setup → Racing Wheel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **Test & Map Controls**.
 4. **Setup → FPV Video:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **Fullscreen** (HUD scales with it), the camera button to save a still, and the red **STOP** for a panic kill.
-5. **Garage:** click a car (or pick it in the top-bar switcher). This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
+5. **Garage:** click a car (or pick it in the top-bar switcher). To tell cars apart at a glance, edit a car and add a **photo** (PNG with a transparent background, or JPG) — it replaces the emoji icon on the card, in the quick garage and in the fleet dashboard, and travels with roster Export / Import. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
 6. **Drive:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
 7. **ARM** (top bar) — the car will not move until armed, and the throttle must be at rest to arm.
 8. **Drive.** Steering/throttle bars and the HUD (gear, RPM, latency, packet loss, battery, RSSI) update at 50 Hz.
