@@ -1,6 +1,6 @@
 {
   "name": "rc-sim-arcade",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "RC Sim Racing Arcade — desktop app for driving ESP-NOW RC cars from a wheel/pad with FPV, telemetry, and a full HUD.",
   "author": "conradrc",
   "license": "MIT",
