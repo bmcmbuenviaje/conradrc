@@ -19,7 +19,9 @@ The whole control chain is browser → USB → radio → car:
 
 ### ✨ Features
 
-- **Visual lobby** — register/edit/delete cars in-app (MAC, icon, color, stats), Import/Export roster JSON.
+- **Console interface** — top bar with car picker, status chips, **ARM** and **STOP**; a section rail (**Drive · Garage · Tune · Race · Setup**); and a "Before you drive" checklist that shows what is still missing. Works on a phone (bottom tab bar, 44 px touch targets).
+- **Themes and layouts** — four themes (**Paddock**, Sim Cockpit, Neon Arcade, Minimal Driver) × three layouts (**Console**, Standard, Driver). Mix freely, tune colours/sizes, toggle panels, and export the look as JSON.
+- **Visual lobby** — register/edit/delete cars in-app (MAC, icon or **photo**, color, stats), Import/Export roster JSON.
 - **Zero-latency control** — 50 Hz Gamepad polling, lean serial packets, ESP-NOW; live latency + packet-loss readout.
 - **Any input** — racing wheel/pad, **keyboard**, **phone touch** (centered up=fwd/down=rev stick or gyro tilt), or a **remote phone over the internet** (WebRTC) driving a PC station.
 - **Drivetrain** — max-power cap, forward/reverse, 6-speed **manual gearbox** with a **10/20/40/60/80/100 %** per-gear curve, racing **RPM shift-lights**, and **simulated engine braking** (tunable strength).
@@ -392,7 +394,7 @@ A fresh install opens in the **Console** layout with the **Paddock** theme:
 
 | Area | What it holds |
 |---|---|
-| **Top bar** | Car switcher, three status chips (controller · transmitter · camera — click one to fix it), **ARM** and **STOP**. Always visible. |
+| **Top bar** | Car picker (photo or icon, name, MAC tail, and **Release car**), three status chips (controller · transmitter · camera — click one to fix it), **ARM** and **STOP**. Always visible. |
 | **Rail** (left; bottom tab bar on phones) | **Drive · Garage · Tune · Race · Setup**, plus **Look**. Click the open section again to collapse the panel. |
 | **Camera view** | FPV feed, HUD, on-screen STOP, snapshot, fullscreen, Quick Settings. A **"Before you drive"** checklist shows what is still missing; each row jumps to the control that fixes it. |
 | **Section panel** (right) | The selected section's controls. |
@@ -409,6 +411,8 @@ Where the panels went:
 
 **Prefer the old look?** **Look → Look** tab lists every theme (**Paddock**, **Sim Cockpit**, **Neon Arcade**, **Minimal Driver**); **Look → Layout** switches between **Console**, **Standard** (sidebar) and **Driver** (full-bleed). Any theme works with any layout. Press **Save look** to keep it. A look you saved before this layout existed is left exactly as it was.
 
+**Adding your own:** themes live in `THEME_PRESETS` and layouts in `LAYOUTS` in [`index.html`](index.html) — add an entry and the **Look** panel lists it. A theme is a set of colour/shape tokens plus a starting layout; a layout is CSS under `:root[data-layout="…"]` and, if it rearranges panels, a placement table like `CONSOLE_PLACEMENT`.
+
 All layouts share one set of controls — the layout engine moves the same panels between regions — so every setting, hotkey and saved value behaves identically whichever look you use.
 
 ### First drive
@@ -419,7 +423,7 @@ The steps below name the Console sections; in the Standard layout the same panel
 2. **Setup → USB Transmitter → Connect** (or click the Transmitter chip / checklist row). A browser dialog lists serial ports; pick the master ESP32. Status flips to `CONNECTED` and the chip turns green.
 3. **Setup → Racing Wheel:** press any button/pedal on your wheel to bind it. No wheel? You can drive from the keyboard (see below). If steering/throttle feel wrong, click **Test & Map Controls**.
 4. **Setup → FPV Video:** pick your capture device and click **Start Frame Grabber**. Grant camera permission. The viewport shows the live feed with the telemetry HUD. Use **Fullscreen** (HUD scales with it), the camera button to save a still, and the red **STOP** for a panic kill.
-5. **Garage:** click a car (or pick it in the top-bar switcher). To tell cars apart at a glance, edit a car and add a **photo** (PNG with a transparent background, or JPG) — it replaces the emoji icon on the card, in the quick garage and in the fleet dashboard, and travels with roster Export / Import. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
+5. **Garage:** click a car (or pick it in the top-bar car picker). To tell cars apart at a glance, edit a car and add a **photo** (PNG with a transparent background, or JPG) — it replaces the emoji icon on the card, in the quick garage and in the fleet dashboard, and travels with roster Export / Import. This sends a `CAR,..` peer swap; the MAC appears as the HUD **Target**, and any per-car tuning is applied. Selecting a car **disarms** for safety.
 6. **Drive:** cap top speed, pick auto vs. manual, engage reverse, tune engine braking.
 7. **ARM** (top bar) — the car will not move until armed, and the throttle must be at rest to arm.
 8. **Drive.** Steering/throttle bars and the HUD (gear, RPM, latency, packet loss, battery, RSSI) update at 50 Hz.
@@ -780,3 +784,5 @@ Field-by-field notes:
 ---
 
 *Built for zero-perceptible-latency (&lt;20 ms) local RC sim racing. Static build · Web Serial 115200 · ESP-NOW mesh.*
+
+**Optional `photo`:** a car may carry a `photo` field — a `data:image/png|jpeg|webp;base64,…` URL written by the car editor (resized to 360 px on its longest side). It is shown instead of `sprite`. Anything that is not such a data URL, or is larger than 600 000 characters, is dropped on import.
