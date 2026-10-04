@@ -352,6 +352,17 @@ async function run() {
   RC.appearance = { preset: 'no-such-theme', layout: 'no-such-layout' };
   assert('unknown theme / layout fall back to the default', RC.appearance.preset === RC.DEFAULT_PRESET && RC.appearance.layout === null);
 
+  // Car picker (themed replacement for the native dropdown)
+  resetSafety(); ctx.s.selectedId = null; w.syncDriverBar();
+  w.toggleCarMenu(true);
+  const pickItems = [...d.querySelectorAll('#carPickMenu .carpick-item[data-id]')];
+  assert('car picker lists every car', pickItems.length === ctx.s.vehicles.length && !d.getElementById('carPickMenu').hidden);
+  pickItems[1].click();
+  assert('picking a car selects it and closes the list', ctx.s.selectedId === ctx.s.vehicles[1].id && d.getElementById('carPickMenu').hidden);
+  assert('picker button shows the selected car', d.getElementById('carPickBtn').textContent.includes(ctx.s.vehicles[1].name));
+  w.toggleCarMenu(true); d.querySelector('#carPickMenu [data-release]').click();
+  assert('Release in the picker deselects the car', ctx.s.selectedId === null);
+
   // HUD painter: change-detected writes still land.
   w.paintHud(120, -40);
   assert('paintHud writes steering + throttle', d.getElementById('hudSteer').textContent === '120°' && d.getElementById('throttleVal').textContent === '-40');
