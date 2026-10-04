@@ -593,43 +593,60 @@ Different wheels/pads expose their steering and pedals on different axis indices
 
 ## 📡 Serial protocol reference
 
-All packets are lean, newline-terminated ASCII at **115200 baud**.
+All packets are lean, newline-terminated ASCII at **115200 baud**. The master accepts `\n` or `\r` as the line end; a line longer than 63 characters is rejected with `ERR,OVERFLOW`.
 
 ### Browser → Master transmitter
 | Packet | Meaning |
 |--------|---------|
-| `CAR,AA,BB,CC,DD,EE,FF\n` | Swap the active ESP-NOW peer to this MAC (six hex bytes). |
-| `DRIVE,<servo>,<motor>\n` | Steering `0–180`; motor **`-255…255`** (negative = reverse, `0` = stop). Already scaled by the power cap and gearbox. Sent only when a value changes. |
+| `CAR,AA,BB,CC,DD,EE,FF\n` | Swap the active ESP-NOW peer to this MAC (six hex bytes) and claim that car. |
+| `DRIVE,<servo>,<motor>,<lights>\n` | Steering `0–180`; motor **`-255…255`** (negative = reverse, `0` = stop), already scaled by the power cap and gearbox; `lights` is the bitfield below (`0–255`). Sent **every control tick (50 Hz)** while a car is selected — including neutral frames while disarmed — so the car's link-loss failsafe always has a heartbeat. The `lights` field is optional for the master (it defaults to `0`). |
+| `RELEASE\n` | Browser deselected the active car. The master clears its claim; the idle claim goes out with the **next** once-a-second presence beacon (not immediately). |
 
-### Master transmitter → Browser (telemetry, shown in the log)
+The ESC calibration helper sends raw two-field `DRIVE,90,<motor>` frames (no `lights`), bypassing arming.
+
+**Lights bitfield** (identical in the app and every receiver sketch):
+
+| Bit | Value | Light |
+|---|---|---|
+| 0 | `0x01` | Headlights |
+| 1 | `0x02` | High beam |
+| 2 | `0x04` | Left signal (receiver blinks it) |
+| 3 | `0x08` | Right signal (receiver blinks it) |
+| 4 | `0x10` | Brake light |
+| 5 | `0x20` | Reverse light |
+| 6 | `0x40` | Horn |
+| 7 | `0x80` | Aux (reserved) |
+
+Brake and reverse bits are set automatically by the app; the rest follow the light toggles. The toy-grade receiver accepts the byte but drives no light pins.
+
+### Master transmitter → Browser
 | Packet | Meaning |
 |--------|---------|
 | `READY,MASTER,<mac>` | Boot banner. |
 | `OK,CAR,<mac>` | Peer swap accepted. |
-| `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. |
+| `ACK,<seq>,OK` / `ACK,<seq>,FAIL` | ESP-NOW delivery status per frame — the browser uses this for **latency** (round-trip) and **packet-loss %**. `<seq>` is the master's latest transmit counter. Presence broadcasts produce no `ACK`. |
 | `TELEM,<mv>,<rssi>,<failsafes>,<flags>` | Car telemetry relayed to the browser: **battery mV**, **RSSI**, **failsafe count** since car boot, and status flags (bit0 = brownout suspected). Drives the HUD + Fleet Dashboard. |
-| `CLAIM,<masterMac>,<carMac>` | Another master on the same 2.4 GHz channel is currently driving `carMac`. The grid shows ⚠ IN USE. `carMac = 00:00…` means idle/released. |
-| `ERR,<code>` | Parse/target error (`CAR_LEN`, `NO_TARGET`, `OVERFLOW`, …). |
+| `CLAIM,<masterMac>,<carMac>` | Another master on the same 2.4 GHz channel is currently driving `carMac`. The grid shows IN USE. `carMac = 00:00…` means idle/released. |
+| `LAP,<gate>,<seq>` | An IR lap gate reported a crossing: gate id `0–255` and that gate's rolling crossing counter. Drives the race timer + leaderboard. |
+| `ERR,<code>` | `CAR_BADBYTE`, `CAR_LEN`, `CAR_ADDPEER` (bad `CAR` line or peer add failed) · `DRIVE_LEN` (missing field) · `NO_TARGET` (`DRIVE` before any `CAR`) · `UNKNOWN` (unrecognised line) · `OVERFLOW` (line too long) · `LR_SET`, `ESPNOW_INIT` (radio setup failed at boot). |
 
-### Browser → Master (additional)
-| Packet | Meaning |
-|--------|---------|
-| `RELEASE\n` | Browser deselected the active car — master broadcasts idle claim so other cabinets can see the release. |
+`ACK`, `TELEM`, `CLAIM` and `LAP` are consumed silently by the app; everything else appears in the Telemetry Log.
 
 ### Over the air (Master → Car, binary)
-A packed `DriveFrame` struct — identical on both firmware files:
+A packed 8-byte `DriveFrame` struct — identical in the master and both receiver sketches:
 ```c
 typedef struct __attribute__((packed)) {
   uint8_t  servo;   // 0..180
   int16_t  motor;   // -255..255 (negative = reverse, 0 = stop)
+  uint8_t  lights;  // bitfield — see the table above
   uint32_t seq;     // rolling sequence for diagnostics
 } DriveFrame;
 ```
 
-The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward).
+The receiver maps `motor` onto the ESC pulse width: `-255 → 1000 µs` (full reverse), `0 → 1500 µs` (neutral), `255 → 2000 µs` (full forward). If no frame arrives for **500 ms** the receiver goes to neutral, centres the steering, shows brake lights, and counts a failsafe.
 
 ### Over the air (Car → Master, binary)
-The car learns the master's MAC from the first frame it receives, then sends back a packed `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
+The car learns the master's MAC from the first frame it receives, then sends back a packed 6-byte `TelemetryFrame` (~5 Hz) which the master relays as a `TELEM` line:
 ```c
 typedef struct __attribute__((packed)) {
   uint16_t vbat_mv;   // battery millivolts (0 if unmeasured)
@@ -639,14 +656,27 @@ typedef struct __attribute__((packed)) {
 } TelemetryFrame;
 ```
 
-Masters also broadcast a `PresenceFrame` on `ff:ff:ff:ff:ff:ff` once a second (unencrypted so any master hears):
+### Broadcast frames
+Masters broadcast a 10-byte `PresenceFrame` on `ff:ff:ff:ff:ff:ff` once a second (unencrypted so any master hears):
 ```c
 typedef struct __attribute__((packed)) {
   char    tag[4]; // "CLM\0"
   uint8_t car[6]; // MAC of the car this master is driving (all zero = idle)
 } PresenceFrame;
 ```
-Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` (GPIO 34) with the right `BATTERY_DIVIDER` ratio. RSSI works with no extra wiring.
+
+An IR lap gate broadcasts a 9-byte `LapFrame` each time its beam breaks (1.5 s debounce at the gate); every master in range relays it as a `LAP` line:
+```c
+typedef struct __attribute__((packed)) {
+  char     tag[4]; // "LAP\0"
+  uint8_t  gate;   // gate id (0..255)
+  uint32_t seq;    // rolling crossing counter
+} LapFrame;
+```
+
+Receivers tell the frame types apart **by length** (8 / 6 / 10 / 9 bytes), so the sizes above are part of the protocol: flash the master, every car and the gate from the same commit.
+
+Battery sensing is **off by default** — set `BATTERY_ENABLED = true` and wire a divider into `PIN_BATTERY` with the right `BATTERY_DIVIDER` ratio. The pin depends on the chip: **GPIO 34** on a classic ESP32, **GPIO 1** on S2/S3, **GPIO 0** on C3/C6 (see [docs/PINOUTS.md](docs/PINOUTS.md)). RSSI works with no extra wiring.
 
 ---
 
