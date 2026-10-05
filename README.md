@@ -384,6 +384,20 @@ See the [wiring diagrams](#-chassis-compatibility) above for both hobby-grade an
 
 **Failsafe behavior:** if the car stops receiving frames for **500 ms**, the receiver centers the steering (90°) and cuts the throttle to neutral automatically. This is defined by `FAILSAFE_MS` in the receiver firmware.
 
+### ⚡ Powering the steering servo (read this — common gotcha)
+
+The **most common cause of a car that "disconnects" at full steering lock** isn't the radio — it's **power**. When you hold max steering, the servo jams against its end-stop and draws a large, continuous **stall current** (1–2.5 A). If that servo shares the ESC's BEC, the voltage sags and the **ESC trips its low-voltage / stall protection**: it **beeps and cuts the motor**, while the ESP32 and the ESP-NOW link keep running — so the car **stays armed, still steers, and the failsafe counter does *not* increment**. Centering the wheel unloads the servo, the voltage recovers, and the ESC re-arms (another beep). Telltale: the HUD **battery voltage dips** right when you hold full lock.
+
+Prevent it:
+
+- **Give the steering servo its own UBEC** (5–6 V, 3–5 A) straight off the main battery, separate from the ESC's BEC — the real fix, so the servo's stall current can't drag down the ESC's supply.
+- **Add a capacitor** (1000–2200 µF, 10 V+) across the servo/BEC rail to absorb the current spike.
+- **Stop the servo stalling at all:** lower **Steering Tuning → Endpoint / Travel (EPA)** to ~80 % (set it per-car too), or narrow the servo pulse range in the receiver's `steering.attach(PIN_STEER, 500, 2500)` toward `1000, 2000`, so full command reaches the mechanical lock *without* jamming past it.
+- **Mechanical:** adjust the servo horn / tie-rod so the wheels reach their stop just *after* the servo's travel ends — never a hard bind.
+- On an **AM32 ESC**, you can also check **Low-Voltage Cutoff** and **Stall Protection** in the [am32.ca](https://am32.ca) configurator — but fix the sag first rather than just disabling protection.
+
+> Don't confuse this with a **brownout reset** of the ESP32 itself: that would *reboot the receiver* — the failsafe counter returns to `0` and the brownout flag (telemetry bit 0) is set. If steering keeps working and the car stays armed, it's the **ESC** reacting to the sag, not the ESP32.
+
 ---
 
 ## 🎮 Using the arcade
@@ -727,8 +741,9 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 | **Manual gears feel the same** | Make sure **Transmission = Manual**; in Automatic there's no per-gear cap. Caps are 10/20/40/60/80/100% of Max Power for gears 1–6. |
 | **Shift lights / gear not showing** | They only appear in **Manual** (Automatic shows `D`). The strip hides in reverse. |
 | **Engine braking nudges the car backward** | Your ESC does instant reverse — lower the **Engine Braking** slider (or `SIM.brakeCmd`), or set the ESC to forward/brake mode. |
+| **ESC beeps & cuts the motor at full steering lock** (steering still works, still armed, no failsafe logged) | **Power sag, not a disconnect.** The steering servo is stalling against its end-stop and dragging down the shared BEC, tripping the ESC's low-voltage / stall protection. Give the **servo its own UBEC** (5–6 V, 3–5 A), add a **1000–2200 µF cap** on the rail, and lower **Steering EPA** (~80 %) or narrow the servo pulse range so it never jams. Full detail: [Powering the steering servo](#-powering-the-steering-servo-read-this--common-gotcha). |
 | **Car won't move at all** | It's probably **DISARMED** — press **⏻ ARM** (throttle must be at rest). Check the Safety badge / HUD arm state. |
-| **Keeps disarming itself** | That's the failsafe: clicking away, hiding the tab, or a controller/USB drop all disarm on purpose. Keep the tab focused. |
+| **Keeps disarming itself** | The focus failsafe. By default it disarms only when the **tab is hidden/minimised**. If it disarms too easily (a second screen, clicking another window), set **Test & Map Controls → Auto-disarm on focus loss** to a looser mode (`blur` = strict, `off` = kiosk). Driving by **phone**? A weak remote link also disarms after ~1.5 s. (A controller/USB drop always disarms.) |
 | **Battery reads `—`** | Battery sensing is off by default. Set `BATTERY_ENABLED = true` and wire a divider on the car (RSSI/latency work regardless). |
 | **`⚠ IN USE` badge** | Another cabinet on the same browser origin selected that car. Presence is best-effort and does not span separate machines. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
