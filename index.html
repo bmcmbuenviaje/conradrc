@@ -1888,6 +1888,19 @@
         </div>
       </div>
       <div class="hint mt-0">With <b>Rolling soft stop</b> on, letting off the throttle lets the crawler roll to a gentle stop; pressing the mapped <b>Brake axis</b> pedal applies braking in proportion to how deep you press (up to the force above).</div>
+      <div class="field-row">
+        <div class="field">
+          <label for="mapFocusFailsafe">Auto-disarm on focus loss</label>
+          <select id="mapFocusFailsafe">
+            <option value="hidden">When tab is hidden (recommended)</option>
+            <option value="blur">On any focus loss (strict)</option>
+            <option value="off">Never (kiosk)</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="hint mt-0">Stops the car disarming every time the window loses focus (a second screen, clicking away). <b>Hidden</b> only disarms when the tab is truly backgrounded; the car's firmware keeps its own 500&nbsp;ms failsafe either way.</div>
+        </div>
+      </div>
       <div class="hint">Wiggle each control above to see which axis index moves, then assign it. Mapped axes glow green. Watch the <b>Buttons</b> row to find a button's index for shifting/reverse. <b>Reverse control:</b> <i>Toggle</i> uses the reverse button/key; <i>Hold</i> makes that button momentary; <i>Clutch pedal</i> reverses while a pedal axis is pressed. Live preview: <b id="mapPreview">SERVO 90° · MOTOR 0</b></div>
       <div class="modal-actions">
         <button class="primary" id="ctrlSave">Save Mapping</button>
@@ -2013,6 +2026,7 @@
     touchThrottleCenter: true,// touch throttle centered: up = forward, down = reverse (no REV button)
     coastMode: false,         // rolling soft stop: no engine braking on release; brake pedal slows
     brakeForce: 70,           // 0..100 %, how hard the mapped brake pedal brakes (coast mode)
+    focusFailsafe: 'hidden',  // auto-disarm on focus loss: 'hidden' (tab backgrounded only) | 'blur' (any focus loss) | 'off'
     hotkeys: null,            // keyboard hotkey map { action: keyString }; null uses defaults
     hudScale: 1.0,            // global HUD scale (0.6..1.5)
     hudLayout: {},            // per-widget {dx, dy} pixel offsets from default position
@@ -3830,15 +3844,16 @@
     paintHud(state.lastSteer, state.lastMotor);
   }
 
-  const REMOTE_INPUT_TIMEOUT_MS = 500;
+  const REMOTE_INPUT_TIMEOUT_MS = 1500;
   function readRemote() {
     // Only the HOST uses this — pulls the last input the client sent.
     if (state.remote.mode !== 'host' || !state.remote.connected) return null;
     const ri = state.remote.remoteInput;
     if (!ri) return null;
-    // The client streams input every 20 ms. If that goes quiet the link has
-    // stalled: holding the last throttle would keep the car driving blind, so
-    // drop the input and disarm instead.
+    // The client streams input every 20 ms. Normal WebRTC/cellular jitter can
+    // leave gaps of a few hundred ms without the link actually being gone, so
+    // only treat a longer stall (1.5 s) as lost. The car's own firmware failsafe
+    // (500 ms, ESP-NOW level) still cuts throttle the moment frames truly stop.
     if (performance.now() - (ri.at || 0) > REMOTE_INPUT_TIMEOUT_MS) {
       state.remote.remoteInput = null;
       safetyHold('remote input lost');
@@ -4600,6 +4615,7 @@
     $('mapCoast').checked = !!c.coastMode;
     $('mapBrakeForce').value = c.brakeForce ?? 70;
     $('mapBrakeForceVal').textContent = (c.brakeForce ?? 70) + '%';
+    $('mapFocusFailsafe').value = c.focusFailsafe || 'hidden';
     $('ctrlOverlay').classList.add('open');
     state.testerTimer = setInterval(updateTester, 50);
     updateTester();
@@ -4714,6 +4730,7 @@
       touchThrottleCenter: $('mapTouchCenter').checked,
       coastMode: $('mapCoast').checked,
       brakeForce: Math.max(0, Math.min(100, parseInt($('mapBrakeForce').value, 10) || 0)),
+      focusFailsafe: $('mapFocusFailsafe').value,
     };
     // Switching away from toggle shouldn't leave reverse stuck on.
     if (state.controls.reverseMode !== 'toggle') state.reverse = false;
@@ -5780,9 +5797,17 @@
       if (b && document.activeElement === b && !b.closest('.overlay')) b.blur();
     });
 
-    // ---- Browser failsafe: disarm when the tab/window loses focus ----
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { state.keys = {}; safetyHold('tab hidden'); } });
-    window.addEventListener('blur', () => { state.keys = {}; safetyHold('window blurred'); });
+    // ---- Browser failsafe: disarm when the app can't see the car ----
+    // 'hidden' (default): only when the tab is truly backgrounded/minimised.
+    // 'blur': also on any window focus loss (strict — can nuisance-disarm on a
+    // second screen or when clicking another window). 'off': never.
+    // The car's firmware keeps its own 500 ms ESP-NOW failsafe regardless.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && state.controls.focusFailsafe !== 'off') { state.keys = {}; safetyHold('tab hidden'); }
+    });
+    window.addEventListener('blur', () => {
+      if (state.controls.focusFailsafe === 'blur') { state.keys = {}; safetyHold('window blurred'); }
+    });
 
     setInterval(controlTick, POLL_MS);
     setInterval(rateTick, 1000);
