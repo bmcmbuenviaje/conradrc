@@ -32,7 +32,7 @@
 
   <!-- title -->
   <text x="34" y="46" class="title">RC CAR <tspan class="accent">RECEIVER</tspan> WIRING</text>
-  <text x="34" y="70" class="lbl-s">ESP32 · STEERING SERVO (D18) · ESC / DRIVE MOTOR (D19) · COMMON GROUND</text>
+  <text x="34" y="70" class="lbl-s">ESP32 · STEERING SERVO (D18) · ESC / DRIVE MOTOR (D19) · PIEZO BUZZER (D13) · COMMON GROUND</text>
 
   <!-- ============ ESP32 board ============ -->
   <g>
@@ -87,6 +87,23 @@
   <!-- signal wire D19 -> ESC -->
   <path class="wire" stroke="#b6ff00" d="M614,327 H670 V405 H720" marker-end="url(#arrow)"/>
   <text x="686" y="352" class="neon" fill="#b6ff00" font-size="11">SIGNAL</text>
+
+  <!-- ============ Piezo buzzer (D13) ============ -->
+  <g>
+    <rect x="720" y="250" width="160" height="82" rx="10" fill="#2a2412" stroke="#ffd166" stroke-width="2"/>
+    <text x="800" y="280" text-anchor="middle" class="neon" fill="#ffd166">Piezo Buzzer</text>
+    <text x="800" y="300" text-anchor="middle" class="lbl">diagnostics + horn</text>
+    <text x="800" y="321" text-anchor="middle" class="lbl-s">passive · plug to [D13 | GND]</text>
+  </g>
+  <!-- D13 pin on the board -->
+  <rect x="600" y="228" width="14" height="14" fill="#ffd166"/>
+  <text x="592" y="239" text-anchor="end" class="lbl">GPIO 13 · D13</text>
+  <!-- signal wire D13 -> buzzer -->
+  <path class="wire" stroke="#ffd166" d="M614,235 H690 V291 H720" marker-end="url(#arrow)"/>
+  <text x="636" y="228" class="neon" fill="#ffd166" font-size="11">SIGNAL</text>
+  <!-- buzzer ground -> common bus (joins the servo/ESC x700 drop) -->
+  <path class="wire" stroke="#e8f0ff" d="M760,332 V348 H700"/>
+  <circle cx="700" cy="348" r="4" fill="#e8f0ff"/>
 
   <!-- ============ Battery / BEC ============ -->
   <g>

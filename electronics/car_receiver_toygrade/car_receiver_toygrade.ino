@@ -59,6 +59,7 @@ static const bool     ENABLE_LR_MODE = true;
   #define BIN2 15
   #define PWMB 16
   #define STBY 17
+  #define PIN_BUZZER 18          // passive piezo buzzer (tone)
   #define PIN_BATTERY 1
 #elif defined(CONFIG_IDF_TARGET_ESP32S2)
   #define BOARD_NAME "ESP32-S2"
@@ -69,6 +70,7 @@ static const bool     ENABLE_LR_MODE = true;
   #define BIN2 8
   #define PWMB 9
   #define STBY 10
+  #define PIN_BUZZER 11          // passive piezo buzzer (tone)
   #define PIN_BATTERY 1
 #elif defined(CONFIG_IDF_TARGET_ESP32C3)
   // C3 "Super Mini": avoid strapping 2/8/9 and USB 18/19.
@@ -80,6 +82,7 @@ static const bool     ENABLE_LR_MODE = true;
   #define BIN2 7
   #define PWMB 10
   #define STBY 20
+  #define PIN_BUZZER 21          // passive piezo buzzer (tone) — XIAO C3 pad D6
   #define PIN_BATTERY 0
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
   #define BOARD_NAME "ESP32-C6"
@@ -90,6 +93,7 @@ static const bool     ENABLE_LR_MODE = true;
   #define BIN2 6
   #define PWMB 7
   #define STBY 18
+  #define PIN_BUZZER 19          // passive piezo buzzer (tone)
   #define PIN_BATTERY 0
 #else  // classic ESP32 (WROOM/WROVER, D1 Mini) — original TB6612 mapping
   #define BOARD_NAME "ESP32"
@@ -100,6 +104,8 @@ static const bool     ENABLE_LR_MODE = true;
   #define BIN2 33
   #define PWMB 14
   #define STBY 13
+  #define PIN_BUZZER 21          // passive piezo buzzer (tone) — next to a GND pin
+                                 // on the common DevKits: plug straight onto [D21 | GND]
   #define PIN_BATTERY 34
 #endif
 
@@ -232,6 +238,54 @@ static void sendTelemetry() {
   esp_now_send(masterMac, (uint8_t *) &t, sizeof(t));
 }
 
+/* ================================================================
+   PIEZO BUZZER / BEEPER  (PIN_BUZZER)
+   ----------------------------------------------------------------
+   Same non-blocking "POST-code" beeper as the hobby-grade receiver.
+   Drives a PASSIVE piezo with a square-wave TONE (LEDC) so a bare
+   2-pin buzzer sounds. Patterns advance on millis() — never blocks.
+     boot ready ........ two rising chirps
+     brownout last cycle 3 urgent low beeps   (statusFlags bit0)
+     link up / restored  one high beep
+     link lost/failsafe  triple beep (repeats every 2.5 s while lost)
+     HORN (held) ....... continuous two-tone (reads the LIGHT_HORN bit)
+   ================================================================ */
+static const int BUZZER_PWM_RES = 10;
+
+struct Beep { uint16_t hz; uint16_t ms; };   // hz == 0 -> silent rest
+
+static const Beep SEQ_BOOT[]  = {{1318,70},{0,40},{1760,110}};
+static const Beep SEQ_LINK[]  = {{2093,120}};
+static const Beep SEQ_BROWN[] = {{330,120},{0,80},{330,120},{0,80},{330,120}};
+static const Beep SEQ_LOST[]  = {{1760,70},{0,60},{1760,70},{0,60},{1760,70}};
+
+static const Beep* bSeq   = nullptr;
+static uint8_t     bLen   = 0, bIdx = 0;
+static uint32_t    bUntil = 0;
+static bool        hornActive = false;
+
+static inline void buzzTone(uint16_t hz) { ledcWriteTone(PIN_BUZZER, hz); }
+static void beepSeq(const Beep* s, uint8_t n) { bSeq = s; bLen = n; bIdx = 0; bUntil = 0; }
+#define BEEP(s) beepSeq((s), sizeof(s)/sizeof((s)[0]))
+
+static void buzzerTick() {
+  const uint32_t now = millis();
+  if (hornActive) {
+    static uint32_t tgl = 0; static bool hi = false;
+    if (now - tgl >= 180) { tgl = now; hi = !hi; }
+    buzzTone(hi ? 494 : 392);
+    bSeq = nullptr;
+    return;
+  }
+  if (!bSeq) { buzzTone(0); return; }
+  if (now >= bUntil) {
+    if (bIdx >= bLen) { bSeq = nullptr; buzzTone(0); return; }
+    const Beep nt = bSeq[bIdx++];
+    buzzTone(nt.hz);
+    bUntil = now + nt.ms;
+  }
+}
+
 /* ---------- Lifecycle ---------- */
 void setup() {
   Serial.begin(115200);
@@ -242,6 +296,8 @@ void setup() {
   pinMode(STBY, OUTPUT); digitalWrite(STBY, HIGH);
   ledcAttach(PWMA, PWM_FREQ, PWM_RES);   // Arduino-ESP32 3.x LEDC API
   ledcAttach(PWMB, PWM_FREQ, PWM_RES);
+  ledcAttach(PIN_BUZZER, 2000, BUZZER_PWM_RES);  // passive piezo buzzer tone channel
+  buzzTone(0);
   applyFailsafe();
 
   esp_reset_reason_t rr = esp_reset_reason();
@@ -268,18 +324,35 @@ void setup() {
   Serial.println(BOARD_NAME);
   Serial.print("READY,RECEIVER_TOY,");
   Serial.println(macStr);
+
+  // Audible power-on: announce a brownout from the last cycle, else a ready chirp.
+  if (statusFlags & 0x01) BEEP(SEQ_BROWN);
+  else                    BEEP(SEQ_BOOT);
 }
 
 void loop() {
   const uint32_t now = millis();
+  static bool     linkUp = false, everLost = false, announced = false;
+  static uint32_t lostBeepMs = 0;
+
   if (haveFrame && (now - lastRxMs) <= FAILSAFE_MS) {
     applyOutputs();
+    if (!linkUp) { linkUp = true; if (everLost) BEEP(SEQ_LINK); }  // reconnected chirp
   } else if (haveFrame) {
     applyFailsafe();
     haveFrame = false;
     failsafeCt++;
     Serial.println("FAILSAFE,LINK_LOST");
+    linkUp = false; everLost = true;
+    BEEP(SEQ_LOST); lostBeepMs = now;
   }
+
+  if (haveMaster && !announced) { announced = true; linkUp = true; BEEP(SEQ_LINK); }
+  if (haveMaster && !linkUp && (now - lostBeepMs) >= 2500) { lostBeepMs = now; BEEP(SEQ_LOST); }
+
+  hornActive = linkUp && (rxLights & LIGHT_HORN);
+  buzzerTick();
+
   if (haveMaster && (now - lastTelemMs) >= 200) { lastTelemMs = now; sendTelemetry(); }
   delay(5);
 }

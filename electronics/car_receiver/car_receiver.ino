@@ -105,7 +105,9 @@ static const bool     ENABLE_LR_MODE = true;
   #define PIN_SIGNAL_L 21        // amber, front-left + rear-left
   #define PIN_SIGNAL_R 5         // amber, front-right + rear-right
   #define PIN_REVERSE_LIGHT 4    // white LEDs, rear
-  #define PIN_HORN 25            // piezo buzzer / siren MOSFET
+  #define PIN_HORN 13            // passive piezo buzzer (TONE) — sits next to a GND
+                                 // pin on the common 30/38-pin DevKits, so a 2-pin
+                                 // buzzer plugs straight onto [D13 | GND]
   #define PIN_BATTERY 34         // ADC1 — input-only pin
 #endif
 // Lighting outputs: small LEDs via a ~330 ohm resistor; MOSFET for bright arrays.
@@ -248,7 +250,64 @@ static void updateLights() {
   digitalWrite(PIN_SIGNAL_L,      leftOn              ? HIGH : LOW);
   digitalWrite(PIN_SIGNAL_R,      rightOn             ? HIGH : LOW);
   digitalWrite(PIN_REVERSE_LIGHT, (L & LIGHT_REVERSE) ? HIGH : LOW);
-  digitalWrite(PIN_HORN,          (L & LIGHT_HORN)    ? HIGH : LOW);
+  // NOTE: the horn is NOT a digital level here — it's a square-wave TONE driven
+  // by the buzzer engine below (buzzerTick), so a passive piezo actually sounds.
+}
+
+/* ================================================================
+   PIEZO BUZZER / BEEPER  (PIN_HORN)
+   ----------------------------------------------------------------
+   Drives a PASSIVE piezo / PC-motherboard speaker with a square-wave
+   TONE via LEDC, so a bare 2-pin buzzer makes sound (a plain HIGH
+   level stays silent on a passive element). Fully NON-BLOCKING: beep
+   patterns advance on millis(), so the 50 Hz control + failsafe loop
+   is never stalled by a delay().
+
+   "POST-code" patterns:
+     boot ready ........ two rising chirps
+     brownout last cycle 3 urgent low beeps   (statusFlags bit0)
+     link up / restored  one high beep
+     link lost/failsafe  triple beep (repeats every 2.5 s while lost)
+     HORN (held) ....... continuous two-tone (overrides diagnostics)
+
+   An ACTIVE buzzer also sounds on this tone drive. For a self-oscillating
+   SIREN MODULE that wants a steady level, swap buzzTone() for
+   digitalWrite(PIN_HORN, hz ? HIGH : LOW).
+   ================================================================ */
+static const int BUZZER_PWM_RES = 10;   // LEDC bits for the tone channel
+
+struct Beep { uint16_t hz; uint16_t ms; };   // hz == 0 -> silent rest
+
+static const Beep SEQ_BOOT[]  = {{1318,70},{0,40},{1760,110}};
+static const Beep SEQ_LINK[]  = {{2093,120}};
+static const Beep SEQ_BROWN[] = {{330,120},{0,80},{330,120},{0,80},{330,120}};
+static const Beep SEQ_LOST[]  = {{1760,70},{0,60},{1760,70},{0,60},{1760,70}};
+
+static const Beep* bSeq   = nullptr;
+static uint8_t     bLen   = 0, bIdx = 0;
+static uint32_t    bUntil = 0;
+static bool        hornActive = false;   // continuous horn — overrides sequences
+
+static inline void buzzTone(uint16_t hz) { ledcWriteTone(PIN_HORN, hz); }
+static void beepSeq(const Beep* s, uint8_t n) { bSeq = s; bLen = n; bIdx = 0; bUntil = 0; }
+#define BEEP(s) beepSeq((s), sizeof(s)/sizeof((s)[0]))
+
+static void buzzerTick() {
+  const uint32_t now = millis();
+  if (hornActive) {                         // horn wins — "ee-aw" two-tone while held
+    static uint32_t tgl = 0; static bool hi = false;
+    if (now - tgl >= 180) { tgl = now; hi = !hi; }
+    buzzTone(hi ? 494 : 392);
+    bSeq = nullptr;
+    return;
+  }
+  if (!bSeq) { buzzTone(0); return; }       // idle: silent
+  if (now >= bUntil) {
+    if (bIdx >= bLen) { bSeq = nullptr; buzzTone(0); return; }
+    const Beep nt = bSeq[bIdx++];
+    buzzTone(nt.hz);
+    bUntil = now + nt.ms;
+  }
 }
 
 void setup() {
@@ -272,7 +331,9 @@ void setup() {
   pinMode(PIN_SIGNAL_L,      OUTPUT); digitalWrite(PIN_SIGNAL_L,      LOW);
   pinMode(PIN_SIGNAL_R,      OUTPUT); digitalWrite(PIN_SIGNAL_R,      LOW);
   pinMode(PIN_REVERSE_LIGHT, OUTPUT); digitalWrite(PIN_REVERSE_LIGHT, LOW);
-  pinMode(PIN_HORN,          OUTPUT); digitalWrite(PIN_HORN,          LOW);
+  // Passive piezo buzzer on PIN_HORN — a square-wave TONE channel, not a GPIO level.
+  ledcAttach(PIN_HORN, 2000, BUZZER_PWM_RES);
+  buzzTone(0);
 
   applyFailsafe();
   updateLights();
@@ -301,21 +362,40 @@ void setup() {
   Serial.println(BOARD_NAME);
   Serial.print("READY,RECEIVER,");
   Serial.println(macStr);
+
+  // Audible power-on: announce a brownout from the last cycle, else a ready chirp.
+  if (statusFlags & 0x01) BEEP(SEQ_BROWN);
+  else                    BEEP(SEQ_BOOT);
 }
 
 void loop() {
   const uint32_t now = millis();
+  static bool     linkUp = false, everLost = false, announced = false;
+  static uint32_t lostBeepMs = 0;
 
   if (haveFrame && (now - lastRxMs) <= FAILSAFE_MS) {
     applyOutputs();
+    if (!linkUp) { linkUp = true; if (everLost) BEEP(SEQ_LINK); }  // reconnected chirp
   } else if (haveFrame) {
     applyFailsafe();
     haveFrame = false;
     failsafeCt++;
     Serial.println("FAILSAFE,LINK_LOST");
+    linkUp = false; everLost = true;
+    BEEP(SEQ_LOST); lostBeepMs = now;
   }
+
+  // First time we hear the master: one "connected" chirp.
+  if (haveMaster && !announced) { announced = true; linkUp = true; BEEP(SEQ_LINK); }
+  // While the link is down, chirp every 2.5 s so a stranded car is easy to find.
+  if (haveMaster && !linkUp && (now - lostBeepMs) >= 2500) { lostBeepMs = now; BEEP(SEQ_LOST); }
+
+  // Horn: sound while the master holds the horn bit (never during a failsafe).
+  hornActive = linkUp && (rxLights & LIGHT_HORN);
+
   // Update lights every loop iteration so blinkers stay smooth.
   updateLights();
+  buzzerTick();
 
   // Heartbeat telemetry back to the master (~5 Hz).
   if (haveMaster && (now - lastTelemMs) >= 200) {

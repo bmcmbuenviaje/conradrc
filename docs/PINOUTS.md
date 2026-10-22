@@ -33,11 +33,19 @@ right variant was detected.
 | Signal L | 21 | 15 | 8 | 7 | 6 |
 | Signal R | 5 | 16 | 9 | 10 | 7 |
 | Reverse light | 4 | 17 | 10 | 20 | 18 |
-| Horn | 25 | 18 | 11 | 21 | 19 |
+| Horn / piezo buzzer | **13** | 18 | 11 | 21 | 19 |
 | Battery sense (ADC1) | 34 | 1 | 1 | 0 | 0 |
 
 **On a mini board you rarely wire all of these** — steering + ESC are the only
 must-haves. Leave any light pin unwired.
+
+> 🔊 **Buzzer:** the *Horn* pin doubles as a **piezo-buzzer** output. It beeps
+> diagnostic "POST codes" (boot ready / link up / link lost / brownout) **and**
+> honks as the horn. On the classic ESP32 it's **GPIO 13**, which sits right next
+> to a **GND** pin on both the 30- and 38-pin DevKits — so a 2-pin PC-speaker
+> buzzer plugs **straight** onto `[D13 | GND]` (polarity doesn't matter on a
+> passive piezo). Drive it **directly — no transistor** (a passive piezo sips a
+> few mA). See the beep-code table in the README.
 
 ## Toy-grade (`car_receiver_toygrade`) — pin map
 
@@ -50,6 +58,7 @@ must-haves. Leave any light pin unwired.
 | BIN2 (steer dir) | 33 | 15 | 8 | 7 | 6 |
 | PWMB (steer speed) | 14 | 16 | 9 | 10 | 7 |
 | STBY (enable) | 13 | 17 | 10 | 20 | 18 |
+| Horn / piezo buzzer | 21 | 18 | 11 | 21 | 19 |
 | Battery sense (ADC1) | 34 | 1 | 1 | 0 | 0 |
 
 If your H-bridge has **no STBY pin** (L298N, most DRV8833 breakouts), just leave
@@ -105,7 +114,7 @@ So the sketch's C3 defaults land on these pads:
 | BIN2 | 7 → **D5** | | Signal L | 7 → **D5** |
 | PWMB | 10 → **D10** | | Signal R | 10 → **D10** |
 | STBY | 20 → **D7** | | Reverse | 20 → **D7** |
-| | | | Horn | 21 → **D6** |
+| Buzzer | 21 → **D6** | | Horn / buzzer | 21 → **D6** |
 
 **Three XIAO gotchas:**
 

@@ -378,6 +378,7 @@ git push
 | **GPIO 18 (D18)** | Steering servo signal wire | 50 Hz servo PWM, 500–2500 µs |
 | **GPIO 19 (D19)** | ESC signal wire | 50 Hz servo-style PWM, 1000–2000 µs |
 | **GND** | Servo GND **and** ESC GND | Common ground (required) |
+| **GPIO 13 (D13)** | Piezo buzzer (+); other leg → any GND | Square-wave tone — diagnostics + horn (optional) |
 | **5 V / VIN** | *From BEC/ESC, not from USB* | Power for the ESP32 |
 
 See the [wiring diagrams](#-chassis-compatibility) above for both hobby-grade and toy-grade layouts.
@@ -397,6 +398,46 @@ Prevent it:
 - On an **AM32 ESC**, you can also check **Low-Voltage Cutoff** and **Stall Protection** in the [am32.ca](https://am32.ca) configurator — but fix the sag first rather than just disabling protection.
 
 > Don't confuse this with a **brownout reset** of the ESP32 itself: that would *reboot the receiver* — the failsafe counter returns to `0` and the brownout flag (telemetry bit 0) is set. If steering keeps working and the car stays armed, it's the **ESC** reacting to the sag, not the ESP32.
+
+---
+
+### 🔊 Buzzer / beeper — audible diagnostics + horn
+
+Add a cheap **2-pin passive piezo buzzer** (a PC "motherboard speaker" is ideal) and the car gains audible **"POST-code" diagnostics** *and* a working **horn** — from one part. It even announces the brownout above out loud.
+
+**Wire it (plug-straight, no transistor):**
+
+- **Red (+) → GPIO 13 (D13)**, **Black (−) → GND**. On the classic ESP32 those two pins are **adjacent** on both the 30- and 38-pin DevKits (`[D13 | GND]`), so the 2-pin connector plugs **straight** on. Polarity doesn't matter on a passive piezo — it beeps either way.
+- A passive piezo sips only a few mA, so it's driven **directly from the pin** — the firmware sends a square-wave **tone**, not a DC level (that's exactly why a passive element makes sound). **No transistor or resistor** needed; add a 100 Ω series resistor only if you want it quieter.
+- Pins for S3 / S2 / C3 / C6 and the toy-grade boards are in [docs/PINOUTS.md](docs/PINOUTS.md).
+
+**What the beeps mean:**
+
+| Pattern | Meaning |
+|---|---|
+| **Two rising chirps** | Powered on and ready |
+| **Three urgent low beeps** at boot | Recovered from a **brownout** last power cycle — check your BEC / servo power (see above) |
+| **One high beep** | Link to the master **acquired** (or restored after a dropout) |
+| **Triple beep**, repeating every 2.5 s | **Link lost / failsafe** — out of range or master off (also helps you locate a stranded car) |
+| **Continuous two-tone "ee-aw"** | **Horn** (held) |
+
+**The horn is already in the app** — default key **`z`**, and you can bind it to a wheel/pad button in **🎮 Test & Map Controls**. Nothing to change on the app or the master; the horn bit already travels end-to-end.
+
+**Reflash scope — the buzzer is *receiver firmware only*:**
+
+| Part | Reflash? | Why |
+|---|:---:|---|
+| **Car receiver(s)** | ✅ **Yes** | The new tone/beeper code lives here |
+| **Master transmitter** | ❌ No | Already relays the horn bit unchanged |
+| **Web app** | ❌ No | Already maps **and** sends the horn |
+
+**Step-by-step** (same as [Part D](#part-d--flash-the-car-receivers) — just re-run it):
+
+1. `git pull` so you have the updated receiver sketch.
+2. Open [`electronics/car_receiver/car_receiver.ino`](electronics/car_receiver/car_receiver.ino) in **Arduino IDE** (toy-grade chassis → [`car_receiver_toygrade.ino`](electronics/car_receiver_toygrade/car_receiver_toygrade.ino)).
+3. **Tools → Board** → your ESP32 variant, then **Tools → Port** → the car's COM port (USB cable to the car's ESP32).
+4. Click **Upload** (→). When it finishes the car plays the **two-chirp "ready"** — that confirms the buzzer works.
+5. Repeat for each car. The master and the browser are untouched, and you **don't** need to re-register the MAC (the packet layout didn't change).
 
 ---
 
@@ -744,6 +785,7 @@ Speed can also be capped live from the **Drivetrain** panel (Max Power + manual 
 | **ESC beeps & cuts the motor at full steering lock** (steering still works, still armed, no failsafe logged) | **Power sag, not a disconnect.** The steering servo is stalling against its end-stop and dragging down the shared BEC, tripping the ESC's low-voltage / stall protection. Give the **servo its own UBEC** (5–6 V, 3–5 A), add a **1000–2200 µF cap** on the rail, and lower **Steering EPA** (~80 %) or narrow the servo pulse range so it never jams. Full detail: [Powering the steering servo](#-powering-the-steering-servo-read-this--common-gotcha). |
 | **Car won't move at all** | It's probably **DISARMED** — press **⏻ ARM** (throttle must be at rest). Check the Safety badge / HUD arm state. |
 | **Keeps disarming itself** | The focus failsafe. By default it disarms only when the **tab is hidden/minimised**. If it disarms too easily (a second screen, clicking another window), set **Test & Map Controls → Auto-disarm on focus loss** to a looser mode (`blur` = strict, `off` = kiosk). Driving by **phone**? A weak remote link also disarms after ~1.5 s. (A controller/USB drop always disarms.) |
+| **Buzzer stays silent** | It must be a **passive** piezo (driven on **GPIO 13** by default) — an *active* buzzer also works, but a self-oscillating *siren module* won't (swap `buzzTone()` for a `digitalWrite` level). Confirm red→**D13**, black→**GND**, and that you flashed the **updated** receiver (you should hear two chirps at boot). |
 | **Battery reads `—`** | Battery sensing is off by default. Set `BATTERY_ENABLED = true` and wire a divider on the car (RSSI/latency work regardless). |
 | **`⚠ IN USE` badge** | Another cabinet on the same browser origin selected that car. Presence is best-effort and does not span separate machines. |
 | **Motor creeps at rest** | Raise the dead-zone in **Test & Map Controls**, or recalibrate `ESC_NEUTRAL_US`. |
