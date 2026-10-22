@@ -154,6 +154,11 @@ typedef struct __attribute__((packed)) {
   uint8_t  flags;      // bit0: brownout hint
 } TelemetryFrame;
 
+// One note in a buzzer beep pattern (hz == 0 -> silent rest). Declared up here so
+// the Arduino IDE's auto-generated prototypes (which it inserts above the first
+// function) can see the type — the buzzer ENGINE itself lives further down.
+struct Beep { uint16_t hz; uint16_t ms; };
+
 /* ---------- Actuators & state ---------- */
 Servo steering;
 Servo esc;
@@ -276,8 +281,7 @@ static void updateLights() {
    ================================================================ */
 static const int BUZZER_PWM_RES = 10;   // LEDC bits for the tone channel
 
-struct Beep { uint16_t hz; uint16_t ms; };   // hz == 0 -> silent rest
-
+// struct Beep is declared up near the wire formats (Arduino prototype-order quirk).
 static const Beep SEQ_BOOT[]  = {{1318,70},{0,40},{1760,110}};
 static const Beep SEQ_LINK[]  = {{2093,120}};
 static const Beep SEQ_BROWN[] = {{330,120},{0,80},{330,120},{0,80},{330,120}};
